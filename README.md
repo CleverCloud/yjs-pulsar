@@ -27,7 +27,7 @@ This architecture ensures that all server instances and clients stay in sync, wi
 
 - [Node.js](https://nodejs.org/) (v16 or later)
 - [npm](https://www.npmjs.com/)
-- An active [Apache Pulsar](https://pulsar.apache.org/docs/getting-started-standalone/) cluster.
+- An active [Apache Pulsar](https://pulsar.apache.org/docs/getting-started-standalone/) cluster. For a managed solution, [Clever Cloud](https://www.clever-cloud.com/developers/doc/addons/pulsar/) offers Pulsar as a service.
 
 ## Setup and Installation
 
