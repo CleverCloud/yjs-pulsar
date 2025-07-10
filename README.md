@@ -1,5 +1,7 @@
 # Yjs Pulsar Backend
 
+> **Note:** This project is currently under active development and is not yet recommended for production use.
+
 This project provides a high-performance, scalable backend for [Yjs](https://github.com/yjs/yjs), enabling real-time collaboration in rich-text editors and other applications. It uses [Apache Pulsar](https://pulsar.apache.org/) as a message broker to relay Yjs document updates and awareness information between clients, following the robust design patterns established by `y-redis`.
 
 ## Features
