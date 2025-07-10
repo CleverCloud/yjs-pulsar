@@ -31,7 +31,7 @@ connectForm.addEventListener('submit', (e) => {
   window.history.pushState({ path: newUrl }, '', newUrl);
 
   const ydoc = new Y.Doc();
-  const provider = new WebsocketProvider(`ws://${location.hostname}:8080`, docName, ydoc);
+      const provider = new WebsocketProvider(`ws://${location.host}`, docName, ydoc);
 
   const editor = new Editor({
     element: document.querySelector('#app')!,
