@@ -4,7 +4,7 @@ import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
-import * as pokemonRandomName from 'pokemon-random-name';
+
 
 const connectContainer = document.getElementById('connect-container')!;
 const editorContainer = document.getElementById('editor-container')!;
@@ -15,7 +15,7 @@ const nicknameInput = document.getElementById('nickname') as HTMLInputElement;
 // Set initial values
 const urlParams = new URLSearchParams(window.location.search);
 documentNameInput.value = urlParams.get('doc') || 'default-document';
-nicknameInput.value = pokemonRandomName.random();
+nicknameInput.value = `User-${Math.floor(Math.random() * 1000)}`;
 
 connectForm.addEventListener('submit', (e) => {
   e.preventDefault();
