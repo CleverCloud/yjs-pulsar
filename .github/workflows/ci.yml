@@ -23,4 +23,9 @@ jobs:
       run: npm install
 
     - name: Run tests
+      env:
+        ADDON_PULSAR_BINARY_URL: ${{ secrets.ADDON_PULSAR_BINARY_URL }}
+        ADDON_PULSAR_TENANT: ${{ secrets.ADDON_PULSAR_TENANT }}
+        ADDON_PULSAR_NAMESPACE: ${{ secrets.ADDON_PULSAR_NAMESPACE }}
+        ADDON_PULSAR_TOKEN: ${{ secrets.ADDON_PULSAR_TOKEN }}
       run: npm test
