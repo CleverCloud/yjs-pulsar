@@ -1,3 +1,3 @@
 declare module 'pokemon-random-name' {
-  export function getRandomName(): string;
+  export function random(lang?: string): string;
 }
