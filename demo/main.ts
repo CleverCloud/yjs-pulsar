@@ -4,28 +4,54 @@ import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
+import { getRandomName } from 'pokemon-random-name';
 
-const ydoc = new Y.Doc();
-const provider = new WebsocketProvider(`ws://${location.hostname}:8080`, 'tiptap-demo-doc', ydoc);
+const connectContainer = document.getElementById('connect-container')!;
+const editorContainer = document.getElementById('editor-container')!;
+const connectForm = document.getElementById('connect-form') as HTMLFormElement;
+const documentNameInput = document.getElementById('document-name') as HTMLInputElement;
+const nicknameInput = document.getElementById('nickname') as HTMLInputElement;
 
-const editor = new Editor({
-  element: document.querySelector('#app')!,
-  extensions: [
-    StarterKit.configure({
-      history: false, // Yjs handles history
-    }),
-    Collaboration.configure({
-      document: ydoc,
-    }),
-    CollaborationCursor.configure({
-      provider: provider,
-      user: {
-        name: `User ${Math.floor(Math.random() * 100)}`,
-        color: `#${Math.floor(Math.random() * 16777215).toString(16)}`,
-      },
-    }),
-  ],
+// Set initial values
+const urlParams = new URLSearchParams(window.location.search);
+documentNameInput.value = urlParams.get('doc') || 'default-document';
+nicknameInput.value = getRandomName();
+
+connectForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+
+  const docName = documentNameInput.value;
+  const nickname = nicknameInput.value;
+
+  connectContainer.style.display = 'none';
+  editorContainer.style.display = 'block';
+
+  // Update URL without reloading
+  const newUrl = `${window.location.pathname}?doc=${docName}`;
+  window.history.pushState({ path: newUrl }, '', newUrl);
+
+  const ydoc = new Y.Doc();
+  const provider = new WebsocketProvider(`ws://${location.hostname}:8080`, docName, ydoc);
+
+  const editor = new Editor({
+    element: document.querySelector('#app')!,
+    extensions: [
+      StarterKit.configure({
+        history: false, // Yjs handles history
+      }),
+      Collaboration.configure({
+        document: ydoc,
+      }),
+      CollaborationCursor.configure({
+        provider: provider,
+        user: {
+          name: nickname,
+          color: `#${Math.floor(Math.random() * 16777215).toString(16)}`,
+        },
+      }),
+    ],
+  });
+
+  (window as any).editor = editor;
+  (window as any).provider = provider;
 });
-
-(window as any).editor = editor;
-(window as any).provider = provider;
