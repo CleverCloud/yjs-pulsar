@@ -1,4 +1,5 @@
 import express from 'express';
+import 'dotenv/config'; // Load environment variables from .env file
 import http from 'http';
 import * as ws from 'ws';
 import { setupWSConnection } from './utils';

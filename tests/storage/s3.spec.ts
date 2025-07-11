@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { S3Storage } from '../../src/storage/s3';
 import * as Y from 'yjs';
 import { Readable } from 'stream';
@@ -19,7 +19,6 @@ jest.mock('@aws-sdk/client-s3', () => {
 
 describe('S3Storage', () => {
   let storage: S3Storage;
-  const mockedS3Client = S3Client as jest.Mock;
 
   beforeEach(() => {
     // Set up environment variables for S3
@@ -29,75 +28,58 @@ describe('S3Storage', () => {
     process.env.S3_SECRET_ACCESS_KEY = 'test-secret-key';
 
     // Clear all mocks before each test
-    mockedS3Client.mockClear();
+    (S3Client as jest.Mock).mockClear();
     mockSend.mockClear();
 
     storage = new S3Storage();
   });
 
-  it('should store an update in S3', async () => {
-    const documentName = 's3-doc';
+  it('should store a document snapshot in S3', async () => {
+    const documentName = 'snapshot-doc';
     const ydoc = new Y.Doc();
-    ydoc.getText('text').insert(0, 's3 test');
-    const update = Y.encodeStateAsUpdate(ydoc);
+    ydoc.getText('content').insert(0, 'snapshot content');
+    const state = Y.encodeStateAsUpdate(ydoc);
 
     mockSend.mockResolvedValueOnce({});
 
-    await storage.storeUpdate(documentName, update);
+    await storage.storeDoc(documentName, state);
 
     expect(mockSend).toHaveBeenCalledWith(expect.any(PutObjectCommand));
     const call = mockSend.mock.calls[0][0];
     expect(call.input.Bucket).toBe('test-bucket');
-    expect(call.input.Key).toMatch(new RegExp(`^${documentName}/`));
-    expect(call.input.Body).toEqual(Buffer.from(update));
+    expect(call.input.Key).toBe(documentName);
+    expect(call.input.Body).toEqual(Buffer.from(state));
   });
 
-  it('should fetch a document from S3 by merging updates', async () => {
-    const documentName = 's3-doc-2';
-    const ydoc1 = new Y.Doc();
-    ydoc1.getText('content').insert(0, 's3 hello');
-    const update1 = Y.encodeStateAsUpdate(ydoc1);
+  it('should retrieve a document snapshot from S3', async () => {
+    const documentName = 'snapshot-doc-2';
+    const ydoc = new Y.Doc();
+    ydoc.getText('content').insert(0, 'existing snapshot');
+    const state = Y.encodeStateAsUpdate(ydoc);
 
-    const ydoc2 = new Y.Doc();
-    Y.applyUpdate(ydoc2, update1);
-    ydoc2.getText('content').insert(8, ' world');
-    const update2 = Y.encodeStateAsUpdate(ydoc2, Y.encodeStateVector(ydoc1));
-
-    // Mock S3 responses based on the command type
-    mockSend.mockImplementation(async (command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return {
-          Contents: [{ Key: `${documentName}/1` }, { Key: `${documentName}/2` }],
-        };
-      }
-      if (command instanceof GetObjectCommand) {
-        if (command.input.Key === `${documentName}/1`) {
-          return { Body: sdkStreamMixin(Readable.from(Buffer.from(update1))) };
-        }
-        if (command.input.Key === `${documentName}/2`) {
-          return { Body: sdkStreamMixin(Readable.from(Buffer.from(update2))) };
-        }
-      }
-      throw new Error(`Unexpected S3 command: ${command.constructor.name}`);
+    mockSend.mockResolvedValueOnce({
+      Body: sdkStreamMixin(Readable.from(Buffer.from(state))),
     });
 
-    const finalUpdate = await storage.fetchDocument(documentName);
-    const finalDoc = new Y.Doc();
-    Y.applyUpdate(finalDoc, finalUpdate);
+    const result = await storage.getDoc(documentName);
 
-    expect(finalDoc.getText('content').toString()).toBe('s3 hello world');
-    expect(mockSend).toHaveBeenCalledWith(expect.any(ListObjectsV2Command));
     expect(mockSend).toHaveBeenCalledWith(expect.any(GetObjectCommand));
+    const call = mockSend.mock.calls[0][0];
+    expect(call.input.Bucket).toBe('test-bucket');
+    expect(call.input.Key).toBe(documentName);
+    expect(result).toEqual(state);
   });
 
-  it('should return an empty document if no updates exist in S3', async () => {
-    const documentName = 'non-existent-s3-doc';
-    mockSend.mockResolvedValueOnce({ Contents: [] });
+  it('should return null if the document does not exist in S3', async () => {
+    const documentName = 'non-existent-doc';
 
-    const finalUpdate = await storage.fetchDocument(documentName);
-    const finalDoc = new Y.Doc();
-    Y.applyUpdate(finalDoc, finalUpdate);
+    const noSuchKeyError = new Error('The specified key does not exist.');
+    noSuchKeyError.name = 'NoSuchKey';
+    mockSend.mockRejectedValueOnce(noSuchKeyError);
 
-    expect(finalDoc.share.size).toBe(0);
+    const result = await storage.getDoc(documentName);
+
+    expect(mockSend).toHaveBeenCalledWith(expect.any(GetObjectCommand));
+    expect(result).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
-# Yjs Pulsar Backend
+# Yjs Pulsar Backend Driver
 
-> **Note:** This project is currently under active development and is not yet recommended for production use.
+> **IMPORTANT:** This project is a backend driver, not a complete, ready-to-use server. It is designed to be integrated into your own application to connect Yjs with Apache Pulsar for real-time collaboration and S3 for persistence. For a ready-to-use server implementation, please see the example project or consider building one on top of this driver.
 
 This project provides a high-performance, scalable backend for [Yjs](https://github.com/yjs/yjs), enabling real-time collaboration in rich-text editors and other applications. It uses [Apache Pulsar](https://pulsar.apache.org/) as a message broker to relay Yjs document updates and awareness information between clients, following the robust design patterns established by `y-redis`.
 
@@ -25,11 +25,16 @@ The backend works by creating a dedicated Pulsar topic for each Yjs document. Wh
 
 This architecture ensures that all server instances and clients stay in sync, with Pulsar acting as the central message bus.
 
+### S3-Based Persistence
+
+The backend uses a snapshot-based persistence model with S3-compatible object storage. This ensures that document state can be reliably saved and retrieved, even in a stateless server environment. All storage components are fully tested to ensure data integrity.
+
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) (v16 or later)
 - [npm](https://www.npmjs.com/)
-- An active [Apache Pulsar](https://pulsar.apache.org/docs/getting-started-standalone/) cluster. For a managed solution, [Clever Cloud](https://www.clever-cloud.com/developers/doc/addons/pulsar/) offers Pulsar as a service.
+- An active [Apache Pulsar](https://pulsar.apache.org/docs/getting-started-standalone/) cluster.
+- An S3-compatible object storage service (e.g., MinIO, AWS S3).
 
 ## Setup and Installation
 
@@ -45,12 +50,12 @@ This architecture ensures that all server instances and clients stay in sync, wi
     ```
 
 3.  **Create a `.env` file:**
-    Copy the `.env.example` file to `.env` and fill in your Pulsar connection details.
+    Copy the `.env.template` file to `.env` and fill in your Pulsar and S3 connection details.
     ```bash
-    cp .env.example .env
+    cp .env.template .env
     ```
 
-    Your `.env` file should look like this:
+    Your `.env` file should include the following variables for Pulsar and S3:
     ```
     # Server Configuration
     PORT=8080
@@ -61,6 +66,13 @@ This architecture ensures that all server instances and clients stay in sync, wi
     ADDON_PULSAR_TENANT=public
     ADDON_PULSAR_NAMESPACE=default
     PULSAR_TOPIC_PREFIX=yjs-doc-
+
+    # S3 Storage Configuration
+    S3_BUCKET=your-s3-bucket-name
+    S3_ENDPOINT=http://localhost:9000
+    S3_ACCESS_KEY_ID=your-access-key
+    S3_SECRET_ACCESS_KEY=your-secret-key
+    AWS_REGION=us-east-1
     ```
 
 ## Running the Application

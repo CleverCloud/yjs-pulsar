@@ -9,6 +9,16 @@ import * as mutex from 'lib0/mutex';
 import Pulsar from 'pulsar-client';
 
 import { PulsarConfig } from '../types.js';
+import { S3Storage } from '../storage';
+
+let storage: S3Storage | null = null;
+
+const getStorage = (): S3Storage => {
+  if (storage === null) {
+    storage = new S3Storage();
+  }
+  return storage;
+};
 
 const wsReadyStateConnecting = 0;
 const wsReadyStateOpen = 1;
@@ -95,6 +105,9 @@ class YDoc extends Y.Doc {
     }
 
     async destroy() {
+        const state = Y.encodeStateAsUpdate(this);
+        await getStorage().storeDoc(this.name, state);
+
         super.destroy();
         if (this.producer) {
             await this.producer.close().catch(err => console.error('Failed to close producer:', err));
@@ -106,70 +119,68 @@ class YDoc extends Y.Doc {
     }
 }
 
-const getYDoc = (docName: string, pulsarClient: Pulsar.Client, pulsarConfig: PulsarConfig): Promise<YDoc> => {
+const getYDoc = async (docName: string, pulsarClient: Pulsar.Client, pulsarConfig: PulsarConfig): Promise<YDoc> => {
     const existingDoc = docs.get(docName);
     if (existingDoc) {
-        return Promise.resolve(existingDoc);
+        return existingDoc;
     }
 
     const newDoc = new YDoc(docName);
     docs.set(docName, newDoc);
 
+    const storedState = await getStorage().getDoc(docName);
+    if (storedState) {
+        Y.applyUpdate(newDoc, storedState, 's3-initial');
+    }
+
     const topic = `persistent://${pulsarConfig.pulsarTenant}/${pulsarConfig.pulsarNamespace}/${pulsarConfig.pulsarTopicPrefix}${docName}`;
 
-    const producerPromise = pulsarClient.createProducer({ topic });
-    const consumerPromise = pulsarClient.subscribe({
-        topic,
-        subscription: `${pulsarConfig.pulsarTopicPrefix}-subscription-${docName}`,
-        subscriptionType: 'Shared',
-    });
+    try {
+        const producer = await pulsarClient.createProducer({ topic });
+        newDoc.producer = producer;
 
-    return new Promise((resolve, reject) => {
-        producerPromise.then(producer => {
-            newDoc.producer = producer;
-            consumerPromise.then(consumer => {
-                newDoc.consumer = consumer;
-                (async () => {
-                    while (await consumer.isConnected()) {
-                        try {
-                            const receivedMsg = await consumer.receive();
-                            const message = receivedMsg.getData();
-                            newDoc.mux(() => {
-                                const decoder = decoding.createDecoder(message);
-                                const messageType = decoding.readVarUint(decoder);
-
-                                switch (messageType) {
-                                    case messageSync:
-                                        syncProtocol.readSyncMessage(decoder, encoding.createEncoder(), newDoc, PULSAR_ORIGIN);
-                                        break;
-                                    case messageAwareness:
-                                        awarenessProtocol.applyAwarenessUpdate(newDoc.awareness, decoding.readVarUint8Array(decoder), PULSAR_ORIGIN);
-                                        break;
-                                }
-                            });
-                            consumer.acknowledge(receivedMsg);
-                        } catch (error) {
-                            if (consumer.isConnected()) {
-                                console.error(`[${newDoc.name}]-PULSAR-CONSUMER: error`, error);
-                            } else {
-                                console.log(`[${newDoc.name}]-PULSAR-CONSUMER: disconnected, exiting loop.`);
-                            }
-                            break;
-                        }
-                    }
-                })();
-                resolve(newDoc);
-            }).catch(async err => {
-                console.error(`[${docName}] Failed to subscribe to Pulsar topic`, err);
-                await newDoc.destroy();
-                reject(err);
-            });
-        }).catch(async err => {
-            console.error(`[${docName}] Failed to create Pulsar producer`, err);
-            await newDoc.destroy();
-            reject(err);
+        const consumer = await pulsarClient.subscribe({
+            topic,
+            subscription: `${pulsarConfig.pulsarTopicPrefix}-subscription-${docName}`,
+            subscriptionType: 'Shared',
         });
-    });
+        newDoc.consumer = consumer;
+
+        (async () => {
+            while (await consumer.isConnected()) {
+                try {
+                    const receivedMsg = await consumer.receive();
+                    const message = receivedMsg.getData();
+                    newDoc.mux(() => {
+                        const decoder = decoding.createDecoder(message);
+                        const messageType = decoding.readVarUint(decoder);
+
+                        switch (messageType) {
+                            case messageSync:
+                                syncProtocol.readSyncMessage(decoder, encoding.createEncoder(), newDoc, PULSAR_ORIGIN);
+                                break;
+                            case messageAwareness:
+                                awarenessProtocol.applyAwarenessUpdate(newDoc.awareness, decoding.readVarUint8Array(decoder), PULSAR_ORIGIN);
+                                break;
+                        }
+                    });
+                    consumer.acknowledge(receivedMsg);
+                } catch (error) {
+                    if (consumer.isConnected()) {
+                        console.error(`[${newDoc.name}]-PULSAR-CONSUMER: error`, error);
+                    } else {
+                        console.log(`[${newDoc.name}]-PULSAR-CONSUMER: disconnected, exiting loop.`);
+                    }
+                    break;
+                }
+            }
+        })();
+        return newDoc;
+    } catch (err) {
+        console.error(`[${docName}] Failed to initialize Pulsar resources`, err);
+        await newDoc.destroy();
+        throw err;
+    }
 };
 
 const onMessage = (conn: ws.WebSocket, doc: YDoc, message: Uint8Array) => {
@@ -257,6 +268,7 @@ export const setupWSConnection = async (conn: ws.WebSocket, req: IncomingMessage
         send(conn, encoding.toUint8Array(awarenessEncoder));
     } catch (err) {
         console.error('Failed to setup connection:', err);
-        conn.close();
+        // Close the connection with an error code to indicate a server-side problem.
+        conn.close(1011, 'Failed to retrieve document state');
     }
 };

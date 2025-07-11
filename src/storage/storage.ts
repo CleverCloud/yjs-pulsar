@@ -1,15 +1,15 @@
 export interface Storage {
   /**
-   * Stores a document update.
+   * Stores a document snapshot.
    * @param documentName The name of the document.
-   * @param update The update to store.
+   * @param state The document state to store.
    */
-  storeUpdate(documentName: string, update: Uint8Array): Promise<void>;
+  storeDoc(documentName: string, state: Uint8Array): Promise<void>;
 
   /**
-   * Fetches the entire document state.
+   * Fetches a document snapshot.
    * @param documentName The name of the document.
-   * @returns A promise that resolves with the consolidated document state.
+   * @returns A promise that resolves with the document state or null if not found.
    */
-  fetchDocument(documentName: string): Promise<Uint8Array>;
+  getDoc(documentName: string): Promise<Uint8Array | null>;
 }

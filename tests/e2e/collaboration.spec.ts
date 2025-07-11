@@ -32,56 +32,68 @@ describe('Yjs Pulsar E2E Collaboration', () => {
         });
 
         afterAll(async () => {
+            // Gracefully close all client connections before shutting down the server
+            for (const ws of serverInstance.wss.clients) {
+                ws.close();
+            }
             await new Promise(resolve => serverInstance.wss.close(resolve));
             await new Promise(resolve => serverInstance.server.close(resolve));
-            await serverInstance.pulsar.close();
+            if (serverInstance.pulsar) {
+                await serverInstance.pulsar.close();
+            }
         });
 
-        let provider1: WebsocketProvider, provider2: WebsocketProvider;
+
+
+        let provider1: WebsocketProvider | null, provider2: WebsocketProvider | null;
+
         afterEach(() => {
             provider1?.destroy();
             provider2?.destroy();
+            provider1 = null;
+            provider2 = null;
         });
 
-        test('should sync updates between two clients', async () => {
-
-            const doc1 = new Y.Doc();
-
-            provider1 = new WebsocketProvider(`ws://localhost:${port}`, docName, doc1, { WebSocketPolyfill: require('ws') });
-
-
-            const doc2 = new Y.Doc();
-
-            provider2 = new WebsocketProvider(`ws://localhost:${port}`, docName, doc2, { WebSocketPolyfill: require('ws') });
-
-
-            try {
-
-                await new Promise(resolve => provider1.once('sync', resolve));
-
-                await new Promise(resolve => provider2.once('sync', resolve));
-
-
-                const array1 = doc1.getArray('test-array');
-                const array2 = doc2.getArray('test-array');
-
-                const updatePromise = new Promise(resolve => {
-                    array2.observe(event => {
-
-                        resolve(event);
-                    });
+        const waitForSync = (provider: WebsocketProvider) => {
+            return new Promise((resolve, reject) => {
+                provider.once('sync', (isSynced: boolean) => {
+                    if (isSynced) {
+                        resolve(true);
+                    } else {
+                        reject(new Error('Sync failed'));
+                    }
                 });
 
+                const ws = provider.ws as any;
+                if (ws) {
+                    ws.addEventListener('close', (event: any) => {
+                        reject(new Error(`WebSocket closed unexpectedly with code: ${event.code}`));
+                    });
+                }
+            });
+        };
 
-                array1.insert(0, ['hello']);
+        test('should sync updates between two clients', async () => {
+            provider1 = new WebsocketProvider(`ws://localhost:${port}`, docName, new Y.Doc(), { WebSocketPolyfill: require('ws') });
+            provider2 = new WebsocketProvider(`ws://localhost:${port}`, docName, new Y.Doc(), { WebSocketPolyfill: require('ws') });
 
-                await updatePromise;
+            const doc1 = provider1.doc;
+            const array1 = doc1.getArray('test-array');
+            const doc2 = provider2.doc;
+            const array2 = doc2.getArray('test-array');
 
+            await Promise.all([waitForSync(provider1), waitForSync(provider2)]);
 
-                expect(array2.toJSON()).toEqual(['hello']);
-            } finally {
+            const updatePromise = new Promise(resolve => {
+                array2.observe(event => {
+                    resolve(event);
+                });
+            });
 
-            }
+            array1.insert(0, ['hello']);
+            await updatePromise;
+
+            expect(array2.toJSON()).toEqual(['hello']);
         });
     });
 });

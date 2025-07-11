@@ -80,6 +80,8 @@ describe('Yjs Pulsar Server Integration', () => {
     let serverInstance: { server: Server, wss: any, pulsar: any };
     let port: number;
     const docName = 'test-doc';
+    let provider1: WebsocketProvider | null;
+    let provider2: WebsocketProvider | null;
 
     beforeAll(async () => {
         console.log('[TEST] beforeAll: Starting server...');
@@ -96,65 +98,64 @@ describe('Yjs Pulsar Server Integration', () => {
         console.log(`[TEST] beforeAll: Server started on port ${port}`);
     });
 
-    afterAll(async () => {
+    afterAll(() => {
         console.log('[TEST] afterAll: Starting shutdown...');
-        await serverInstance.pulsar.close();
-        serverInstance.wss.close();
-        await new Promise(resolve => serverInstance.server.close(resolve));
-        messageBus.clear();
-        console.log('[TEST] afterAll: Shutdown complete.');
+        return new Promise<void>(resolve => {
+            // Gracefully close all client connections
+            for (const ws of serverInstance.wss.clients) {
+                ws.close();
+            }
+
+            serverInstance.wss.close(async () => {
+                await serverInstance.pulsar.close();
+                serverInstance.server.close(() => {
+                    messageBus.clear();
+                    console.log('[TEST] afterAll: Shutdown complete.');
+                    resolve();
+                });
+            });
+        });
+    });
+
+    afterEach(() => {
+        provider1?.destroy();
+        provider2?.destroy();
+        provider1 = null;
+        provider2 = null;
     });
 
     test('should sync updates between two clients', async () => {
-        const testExecution = async () => {
-            console.log('[TEST] Running test: should sync updates between two clients');
-            const doc1 = new Y.Doc();
-            const provider1 = new WebsocketProvider(`ws://localhost:${port}`, docName, doc1, { WebSocketPolyfill: require('ws') });
-            provider1.on('status', (event: any) => console.log(`[PROVIDER 1] Status: ${event.status}`))
-            const array1 = doc1.getArray('test-array');
-    
-            const doc2 = new Y.Doc();
-            const provider2 = new WebsocketProvider(`ws://localhost:${port}`, docName, doc2, { WebSocketPolyfill: require('ws') });
-            provider2.on('status', (event: any) => console.log(`[PROVIDER 2] Status: ${event.status}`))
-            const array2 = doc2.getArray('test-array');
-    
-            try {
-                console.log('[TEST] Waiting for provider 2 to sync...');
-                await new Promise(resolve => provider2.on('sync', (isSynced: boolean) => {
-                    if (isSynced) {
-                        console.log('[TEST] Provider 2 synced.');
-                        resolve(true);
-                    }
-                }));
-    
-                const updatePromise = new Promise(resolve => {
-                    array2.observe(() => {
-                        console.log('[TEST] Received update on doc2');
-                        expect(array2.toArray()).toEqual(['hello']);
-                        resolve(true);
-                    });
-                });
-    
-                console.log('[TEST] Pushing update to doc1...');
-                array1.push(['hello']);
-    
-                await updatePromise;
-                console.log('[TEST] Update confirmed.');
-            } finally {
-                console.log('[TEST] Finally block: Disconnecting providers...');
-                provider1.disconnect();
-                provider2.disconnect();
-                console.log('[TEST] Providers disconnected.');
+        console.log('[TEST] Running test: should sync updates between two clients');
+        const doc1 = new Y.Doc();
+        provider1 = new WebsocketProvider(`ws://localhost:${port}`, docName, doc1, { WebSocketPolyfill: require('ws') });
+        provider1.on('status', (event: any) => console.log(`[PROVIDER 1] Status: ${event.status}`))
+        const array1 = doc1.getArray('test-array');
+
+        const doc2 = new Y.Doc();
+        provider2 = new WebsocketProvider(`ws://localhost:${port}`, docName, doc2, { WebSocketPolyfill: require('ws') });
+        provider2.on('status', (event: any) => console.log(`[PROVIDER 2] Status: ${event.status}`))
+        const array2 = doc2.getArray('test-array');
+
+        console.log('[TEST] Waiting for provider 2 to sync...');
+        await new Promise(resolve => provider2!.on('sync', (isSynced: boolean) => {
+            if (isSynced) {
+                console.log('[TEST] Provider 2 synced.');
+                resolve(true);
             }
-        };
+        }));
 
-        const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
-            const timeout = new Promise<T>((_, reject) =>
-                setTimeout(() => reject(new Error(`Test timed out after ${ms}ms`)), ms)
-            );
-            return Promise.race([promise, timeout]);
-        };
+        const updatePromise = new Promise(resolve => {
+            array2.observe(() => {
+                console.log('[TEST] Received update on doc2');
+                expect(array2.toArray()).toEqual(['hello']);
+                resolve(true);
+            });
+        });
 
-        await withTimeout(testExecution(), 5000);
+        console.log('[TEST] Pushing update to doc1...');
+        array1.push(['hello']);
+
+        await updatePromise;
+        console.log('[TEST] Update confirmed.');
     }, 10000);
 });
