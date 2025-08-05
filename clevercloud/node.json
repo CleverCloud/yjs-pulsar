@@ -1,0 +1,15 @@
+{
+  "build": {
+    "type": "npm",
+    "commands": [
+      "npm ci",
+      "npm run build"
+    ]
+  },
+  "run": {
+    "commands": ["npm start"]
+  },
+  "deploy": {
+    "goal": "production"
+  }
+}

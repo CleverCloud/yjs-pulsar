@@ -105,6 +105,23 @@ To run the demo:
     ```
     This will start the Vite development server. You can now open the URL shown in the terminal (usually `http://localhost:5173`) in multiple browser tabs or windows to see the collaborative editor in action.
 
+## Deploying to Clever Cloud
+
+Deploy the demo to Clever Cloud with a dedicated Pulsar add-on:
+
+```bash
+# Quick deployment (automated)
+./deploy-clever.sh
+
+# Or manual deployment
+clever create yjs-pulsar-demo --type node
+clever addon create pulsar-addon PULSAR
+clever addon link pulsar-addon
+clever deploy
+```
+
+**📖 Complete guide:** See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions.
+
 ## Running Tests
 
 Le projet inclut des tests unitaires (avec Pulsar mocké), des tests E2E et des outils de test manuel pour une validation complète.

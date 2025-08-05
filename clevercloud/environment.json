@@ -1,0 +1,7 @@
+{
+  "environment": {
+    "NODE_ENV": "production",
+    "PULSAR_TOPIC_PREFIX": "yjs-demo-",
+    "STORAGE_TYPE": "none"
+  }
+}

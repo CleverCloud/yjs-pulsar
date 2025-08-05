@@ -6,9 +6,13 @@
     "test": "jest --runInBand --detectOpenHandles tests/",
     "test:e2e": "jest --config jest.config.e2e.js --runInBand --verbose",
     "start:server": "ts-node src/server/index.ts",
-    "start": "ts-node src/server/index.ts",
+    "start": "node dist/server/production.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server/index.ts",
-    "demo": "vite demo"
+    "demo": "vite demo",
+    "build": "npm run build:demo && npm run build:server",
+    "build:demo": "vite build demo",
+    "build:server": "tsc && cp package.json dist/",
+    "start:production": "npm run build && node dist/server/production.js"
   },
   "keywords": [],
   "author": "",
