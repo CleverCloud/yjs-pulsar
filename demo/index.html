@@ -8,16 +8,32 @@
   </head>
   <body>
     <div id="connect-container">
-      <h1>Yjs Pulsar Demo</h1>
-      <p>Enter a document name and a nickname to start collaborating.</p>
+      <h1>🚀 Yjs Pulsar Demo</h1>
+      <p>Real-time collaborative text editor powered by Yjs and Apache Pulsar</p>
+      <div class="info-box">
+        <h3>How to test collaboration:</h3>
+        <ol>
+          <li>Enter a document name and your nickname</li>
+          <li>Open this same URL in another browser tab or window</li>
+          <li>Use the same document name but different nickname</li>
+          <li>Start typing in both editors to see real-time sync!</li>
+        </ol>
+      </div>
       <form id="connect-form">
-        <input type="text" id="document-name" placeholder="Document Name" required />
-        <input type="text" id="nickname" placeholder="Nickname" required />
-        <button type="submit">Connect</button>
+        <input type="text" id="document-name" placeholder="Document Name (e.g., 'my-doc')" required />
+        <input type="text" id="nickname" placeholder="Your Nickname" required />
+        <button type="submit">🎯 Connect & Start Editing</button>
       </form>
     </div>
     <div id="editor-container" style="display: none;">
+      <div class="editor-header">
+        <h2>📝 Collaborative Editor</h2>
+        <p>Document: <strong id="doc-name"></strong> | You are: <strong id="user-name"></strong></p>
+      </div>
       <div id="app"></div>
+      <div class="editor-footer">
+        <p><small>💡 Tip: Open another tab with the same document name to see real-time collaboration!</small></p>
+      </div>
     </div>
     <script type="module" src="/main.ts"></script>
   </body>

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>YJS Pulsar Test</title>
+    <script src="https://unpkg.com/yjs@13.6.27/dist/yjs.js"></script>
+    <script src="https://unpkg.com/y-websocket@2.0.3/dist/y-websocket.js"></script>
+</head>
+<body>
+    <h1>YJS Pulsar Collaboration Test</h1>
+    <div>
+        <label>Document Name: <input type="text" id="docName" value="test-doc"></label>
+        <button onclick="connect()">Connect</button>
+        <button onclick="disconnect()">Disconnect</button>
+    </div>
+    <div>
+        <label>Add Item: <input type="text" id="newItem"></label>
+        <button onclick="addItem()">Add</button>
+    </div>
+    <div>
+        <h3>Items:</h3>
+        <ul id="items"></ul>
+    </div>
+    <div>
+        <h3>Connection Status:</h3>
+        <div id="status">Disconnected</div>
+    </div>
+
+    <script>
+        let doc, provider, yarray;
+
+        function connect() {
+            const docName = document.getElementById('docName').value;
+            
+            // Create YJS document
+            doc = new Y.Doc();
+            yarray = doc.getArray('items');
+            
+            // Create WebSocket provider
+            provider = new Y.WebsocketProvider('ws://localhost:8080', docName, doc);
+            
+            provider.on('status', event => {
+                document.getElementById('status').textContent = `Status: ${event.status}`;
+                console.log('Provider status:', event.status);
+            });
+            
+            provider.on('sync', isSynced => {
+                document.getElementById('status').textContent = `Synced: ${isSynced}`;
+                console.log('Sync status:', isSynced);
+            });
+            
+            // Listen for changes
+            yarray.observe(event => {
+                updateItemsList();
+            });
+            
+            updateItemsList();
+        }
+        
+        function disconnect() {
+            if (provider) {
+                provider.destroy();
+                provider = null;
+            }
+            if (doc) {
+                doc.destroy();
+                doc = null;
+            }
+            document.getElementById('status').textContent = 'Disconnected';
+            document.getElementById('items').innerHTML = '';
+        }
+        
+        function addItem() {
+            const newItem = document.getElementById('newItem').value;
+            if (newItem && yarray) {
+                yarray.push([newItem]);
+                document.getElementById('newItem').value = '';
+            }
+        }
+        
+        function updateItemsList() {
+            if (!yarray) return;
+            
+            const items = yarray.toArray();
+            const list = document.getElementById('items');
+            list.innerHTML = '';
+            
+            items.forEach((item, index) => {
+                const li = document.createElement('li');
+                li.textContent = `${index + 1}. ${item}`;
+                list.appendChild(li);
+            });
+        }
+    </script>
+</body>
+</html>

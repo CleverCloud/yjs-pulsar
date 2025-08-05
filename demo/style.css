@@ -10,7 +10,7 @@ body {
 }
 
 #connect-container {
-  max-width: 400px;
+  max-width: 500px;
   width: 100%;
   margin: 2rem auto;
   padding: 2rem;
@@ -19,6 +19,28 @@ body {
   text-align: center;
   background-color: #fff;
   box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.info-box {
+  background-color: #e3f2fd;
+  border: 1px solid #2196f3;
+  border-radius: 4px;
+  padding: 1rem;
+  margin: 1rem 0;
+  text-align: left;
+}
+
+.info-box h3 {
+  margin-top: 0;
+  color: #1976d2;
+}
+
+.info-box ol {
+  margin-bottom: 0;
+}
+
+.info-box li {
+  margin-bottom: 0.5rem;
 }
 
 #connect-form input {
@@ -47,11 +69,37 @@ body {
 }
 
 #editor-container {
-    width: 800px;
+    width: 900px;
+    max-width: 95vw;
     background-color: #fff;
     padding: 1rem;
     border-radius: 8px;
     box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.editor-header {
+    border-bottom: 1px solid #eee;
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+}
+
+.editor-header h2 {
+    margin: 0 0 0.5rem 0;
+    color: #333;
+}
+
+.editor-header p {
+    margin: 0;
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.editor-footer {
+    border-top: 1px solid #eee;
+    padding-top: 1rem;
+    margin-top: 1rem;
+    text-align: center;
+    color: #666;
 }
 
 .tiptap {

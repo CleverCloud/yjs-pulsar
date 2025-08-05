@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "jest --runInBand --detectOpenHandles",
-    "test:e2e": "jest --runInBand tests/e2e",
+    "test": "jest --runInBand --detectOpenHandles tests/",
+    "test:e2e": "jest --config jest.config.e2e.js --runInBand --verbose",
     "start:server": "ts-node src/server/index.ts",
     "start": "ts-node src/server/index.ts",
     "dev": "ts-node-dev --respawn --transpile-only src/server/index.ts",
@@ -23,16 +23,18 @@
     "express": "^5.1.0",
     "lib0": "^0.2.109",
     "pulsar-client": "^1.14.0",
+    "ts-node-dev": "^2.0.0",
     "typescript": "^5.4.5",
     "vite": "^5.2.11",
     "ws": "^8.16.0",
-    "y-protocols": "^1.0.6",
     "y-prosemirror": "^1.2.7",
+    "y-protocols": "^1.0.6",
     "y-websocket": "^2.0.3",
     "yjs": "^13.6.27"
   },
   "devDependencies": {
     "@aws-sdk/util-stream-node": "^3.370.0",
+    "@swc/core": "^1.13.3",
     "@types/express": "^5.0.3",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.10",
@@ -41,7 +43,6 @@
     "jest": "^30.0.4",
     "nodemon": "^3.1.10",
     "ts-jest": "^29.1.2",
-    "ts-node": "^10.9.2",
-    "y-websocket": "^3.0.0"
+    "ts-node": "^10.9.2"
   }
 }

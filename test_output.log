@@ -1,0 +1,151 @@
+
+> yjs-pulsar@1.0.0 test:e2e
+> jest --config jest.config.e2e.js --runInBand --verbose
+
+  console.log
+    [dotenv@17.0.1] injecting env (20) from .env – [tip] encrypt with dotenvx: https://dotenvx.com
+
+      at _log (node_modules/dotenv/lib/main.js:102:11)
+
+  console.log
+    Creating Pulsar client with config: {
+      serviceUrl: 'pulsar+ssl://materiamq.eu-fr-1.services.clever-cloud.com:6651',
+      operationTimeoutSeconds: 120,
+      tokenProvided: true
+    }
+
+      at createPulsarClient (src/server/utils.ts:49:13)
+
+  console.log
+    [provider1] Waiting for sync...
+
+      at tests/e2e/collaboration.spec.ts:59:25
+
+  console.log
+    [provider2] Waiting for sync...
+
+      at tests/e2e/collaboration.spec.ts:59:25
+
+  console.log
+    [provider2] Synced.
+
+      at tests/e2e/collaboration.spec.ts:67:33
+          at Array.forEach (<anonymous>)
+
+  console.error
+    [e2e-test-doc-1754285174187] Attempt 1 failed to initialize Pulsar resources: [Error: Failed to create producer: AuthorizationError]
+
+      286 |             return newDoc; // Success
+      287 |         } catch (err) {
+    > 288 |             console.error(`[${docName}] Attempt ${attempt} failed to initialize Pulsar resources:`, err);
+          |                     ^
+      289 |             if (attempt < MAX_RETRIES) {
+      290 |                 await reconnectPulsarClient(pulsarClientContainer, pulsarConfig);
+      291 |                 await new Promise(resolve => setTimeout(resolve, 1000)); // Wait before retrying
+
+      at getYDoc (src/server/utils.ts:288:21)
+      at setupWSConnection (src/server/utils.ts:344:21)
+
+  console.error
+    [e2e-test-doc-1754285174187] Attempt 2 failed to initialize Pulsar resources: [Error: Failed to create producer: AuthorizationError]
+
+      286 |             return newDoc; // Success
+      287 |         } catch (err) {
+    > 288 |             console.error(`[${docName}] Attempt ${attempt} failed to initialize Pulsar resources:`, err);
+          |                     ^
+      289 |             if (attempt < MAX_RETRIES) {
+      290 |                 await reconnectPulsarClient(pulsarClientContainer, pulsarConfig);
+      291 |                 await new Promise(resolve => setTimeout(resolve, 1000)); // Wait before retrying
+
+      at getYDoc (src/server/utils.ts:288:21)
+      at setupWSConnection (src/server/utils.ts:344:21)
+
+  console.error
+    [e2e-test-doc-1754285174187] Attempt 3 failed to initialize Pulsar resources: [Error: Failed to create producer: AuthorizationError]
+
+      286 |             return newDoc; // Success
+      287 |         } catch (err) {
+    > 288 |             console.error(`[${docName}] Attempt ${attempt} failed to initialize Pulsar resources:`, err);
+          |                     ^
+      289 |             if (attempt < MAX_RETRIES) {
+      290 |                 await reconnectPulsarClient(pulsarClientContainer, pulsarConfig);
+      291 |                 await new Promise(resolve => setTimeout(resolve, 1000)); // Wait before retrying
+
+      at getYDoc (src/server/utils.ts:288:21)
+      at setupWSConnection (src/server/utils.ts:344:21)
+
+  console.log
+    [e2e-test-doc-1754285174187] Destroying YDoc
+
+      at YDoc.destroy (src/server/utils.ts:141:17)
+
+  console.log
+    [e2e-test-doc-1754285174187] YDoc destroyed and removed from docs map
+
+      at YDoc.destroy (src/server/utils.ts:160:17)
+
+  console.error
+    [e2e-test-doc-1754285174187] Error setting up connection Error: Failed to initialize Pulsar for e2e-test-doc-1754285174187 after 3 attempts.
+        at getYDoc (/Users/waxzce/work/org/yjs/yjs-pulsar/src/server/utils.ts:294:23)
+        at setupWSConnection (/Users/waxzce/work/org/yjs/yjs-pulsar/src/server/utils.ts:344:21)
+
+      366 |         onConnection(conn, doc);
+      367 |     } catch (err) {
+    > 368 |         console.error(`[${docName}] Error setting up connection`, err);
+          |                 ^
+      369 |         conn.close(1011, 'Internal Server Error');
+      370 |     }
+      371 | };
+
+      at setupWSConnection (src/server/utils.ts:368:17)
+
+  console.log
+    [e2e-test-doc-1754285174187] Destroying YDoc
+
+      at YDoc.destroy (src/server/utils.ts:141:17)
+
+  console.log
+    [e2e-test-doc-1754285174187] YDoc destroyed and removed from docs map
+
+      at YDoc.destroy (src/server/utils.ts:160:17)
+
+FAIL tests/e2e/collaboration.spec.ts (5.475 s)
+  Yjs Pulsar E2E Collaboration
+    E2E tests with real Pulsar
+      ✕ should sync updates between two clients (4439 ms)
+
+  ● Yjs Pulsar E2E Collaboration › E2E tests with real Pulsar › should sync updates between two clients
+
+    [provider1] WebSocket closed unexpectedly with code: 1011
+
+      76 |                     provider.ws.addEventListener('close', (event: any) => {
+      77 |                         clearTimeout(timeout);
+    > 78 |                         reject(new Error(`[${providerName}] WebSocket closed unexpectedly with code: ${event.code}`));
+         |                                ^
+      79 |                     });
+      80 |                 } else {
+      81 |                     reject(new Error(`[${providerName}] WebSocket connection is not available.`));
+
+      at WebSocket.<anonymous> (tests/e2e/collaboration.spec.ts:78:32)
+      at callListener (node_modules/ws/lib/event-target.js:290:14)
+      at WebSocket.onClose (node_modules/ws/lib/event-target.js:220:9)
+      at WebSocket.emitClose (node_modules/ws/lib/websocket.js:272:10)
+      at Socket.socketOnClose (node_modules/ws/lib/websocket.js:1341:15)
+
+  console.log
+    [dotenv@17.0.1] injecting env (20) from .env – [tip] encrypt with dotenvx: https://dotenvx.com
+
+      at _log (node_modules/dotenv/lib/main.js:102:11)
+
+PASS tests/e2e/simple.spec.ts
+  Simple E2E test
+    ✓ should pass (1 ms)
+
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       1 failed, 1 passed, 2 total
+Snapshots:   0 total
+Time:        5.632 s, estimated 6 s
+Ran all test suites.
+Jest did not exit one second after the test run has completed.
+
+'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.

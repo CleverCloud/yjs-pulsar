@@ -1,31 +1,118 @@
-name: CI
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [ main, develop ]
   pull_request:
-    branches: [ master, main ]
+    branches: [ main ]
 
 jobs:
-  build:
+  test:
+    name: Tests Unitaires
     runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
 
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-    - name: Use Node.js
-      uses: actions/setup-node@v3
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: ${{ matrix.node-version }}
         cache: 'npm'
 
     - name: Install dependencies
-      run: npm install
+      run: npm ci
 
-    - name: Run tests
+    - name: Run TypeScript check
+      run: npx tsc --noEmit
+
+    - name: Run unit tests
+      run: npm test
       env:
+        NODE_ENV: test
+
+    - name: Run basic E2E tests (mock only)
+      run: npx jest tests/e2e/simple.spec.ts --runInBand
+      env:
+        NODE_ENV: test
+
+  test-with-pulsar:
+    name: Tests E2E avec Pulsar Réel
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run E2E tests with real Pulsar
+      run: npm run test:e2e
+      env:
+        NODE_ENV: test
         ADDON_PULSAR_BINARY_URL: ${{ secrets.ADDON_PULSAR_BINARY_URL }}
+        ADDON_PULSAR_TOKEN: ${{ secrets.ADDON_PULSAR_TOKEN }}
         ADDON_PULSAR_TENANT: ${{ secrets.ADDON_PULSAR_TENANT }}
         ADDON_PULSAR_NAMESPACE: ${{ secrets.ADDON_PULSAR_NAMESPACE }}
-        ADDON_PULSAR_TOKEN: ${{ secrets.ADDON_PULSAR_TOKEN }}
-      run: npm test
+        PULSAR_TOPIC_PREFIX: "ci-test-"
+        STORAGE_TYPE: "none"
+
+  build-demo:
+    name: Build Demo
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build demo
+      run: npm run build
+
+    - name: Upload demo artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: demo-build
+        path: demo/dist/
+        retention-days: 7
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run security audit
+      run: npm audit --audit-level=moderate

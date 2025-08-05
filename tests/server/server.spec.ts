@@ -1,161 +1,125 @@
-import { startServer, ServerConfig } from '../../src/server';
+import { startServer, ServerConfig, YjsPulsarServer } from '../../src/server';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
-import { Server } from 'http';
 import { AddressInfo } from 'net';
 
-// In-memory message bus to mock Pulsar topics
-const messageBus = new Map<string, { messages: any[], waitingResolvers: Function[] }>();
-
-function getTopicBus(topic: string) {
-    if (!messageBus.has(topic)) {
-        messageBus.set(topic, { messages: [], waitingResolvers: [] });
-    }
-    return messageBus.get(topic)!;
-}
-
 jest.mock('pulsar-client', () => {
-    const Pulsar = jest.requireActual('pulsar-client');
+  const Pulsar = jest.requireActual('pulsar-client');
 
-    const mockProducer = jest.fn(function(this: any, config: { topic: string }) {
-        this.topic = config.topic;
-        this.send = jest.fn(({ data }: { data: Buffer }) => {
+  const mockProducer = {
+    send: jest.fn().mockResolvedValue(undefined),
+    close: jest.fn().mockResolvedValue(undefined),
+    flush: jest.fn().mockResolvedValue(undefined),
+  };
 
-            const bus = getTopicBus(this.topic);
-            const message = { getData: () => data, getTopicName: () => this.topic };
-            if (bus.waitingResolvers.length > 0) {
-                bus.waitingResolvers.shift()!(message);
-            } else {
-                bus.messages.push(message);
-            }
-            return Promise.resolve();
-        });
-        this.close = jest.fn().mockResolvedValue(undefined);
-        this.flush = jest.fn().mockResolvedValue(undefined);
-    });
+  const mockConsumer = {
+    receive: jest.fn(() => new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('No messages')), 100);
+    })),
+    acknowledge: jest.fn(),
+    close: jest.fn().mockResolvedValue(undefined),
+    isConnected: jest.fn(() => false),
+  };
 
-    const mockConsumer = jest.fn(function(this: any, config: { topic: string }) {
-        this.topic = config.topic;
-        let connected = true;
-        this.isConnected = jest.fn(() => connected);
-        this.receive = jest.fn(() => {
-            console.log(`[MOCK PULSAR] Consumer listening on ${this.topic}`);
-            return new Promise(resolve => {
-                if (!connected) {
-                    resolve(new Error('Consumer closed'));
-                    return;
-                }
-                const bus = getTopicBus(this.topic);
-                if (bus.messages.length > 0) {
-                    resolve(bus.messages.shift());
-                } else {
-                    bus.waitingResolvers.push(resolve);
-                }
-            });
-        });
-        this.acknowledge = jest.fn();
-        this.close = jest.fn(() => {
-            connected = false;
-            const bus = getTopicBus(this.topic);
-            while (bus.waitingResolvers.length > 0) {
-                bus.waitingResolvers.shift()!(new Error('Consumer closed'));
-            }
-            return Promise.resolve();
-        });
-    });
+  const mockClient = {
+    createProducer: jest.fn().mockResolvedValue(mockProducer),
+    subscribe: jest.fn().mockResolvedValue(mockConsumer),
+    close: jest.fn().mockResolvedValue(undefined),
+  };
 
-    const mockClient = {
-        createProducer: jest.fn().mockImplementation(config => Promise.resolve(new mockProducer(config))),
-        subscribe: jest.fn().mockImplementation(config => Promise.resolve(new mockConsumer(config))),
-        close: jest.fn(() => {
-            console.log('[MOCK PULSAR] Client closing');
-            return Promise.resolve();
-        }),
-    };
-
-    return { ...Pulsar, Client: jest.fn(() => mockClient) };
+  return { ...Pulsar, Client: jest.fn(() => mockClient) };
 });
 
 describe('Yjs Pulsar Server Integration', () => {
-    let serverInstance: { server: Server, wss: any, pulsar: any };
-    let port: number;
-    const docName = 'test-doc';
-    let provider1: WebsocketProvider | null;
-    let provider2: WebsocketProvider | null;
+  let serverInstance: YjsPulsarServer | null = null;
+  let port: number;
+  const docName = 'test-doc';
 
-    beforeAll(async () => {
-        console.log('[TEST] beforeAll: Starting server...');
-        const config: ServerConfig = {
-            port: 0, // Use 0 to get a random free port
-            pulsarUrl: 'pulsar://localhost:6650',
-            pulsarTenant: 'public',
-            pulsarNamespace: 'default',
-            pulsarTopicPrefix: 'yjs-doc-',
-        };
-        serverInstance = await startServer(config);
-        const address = serverInstance.server.address() as AddressInfo;
-        port = address.port;
-        console.log(`[TEST] beforeAll: Server started on port ${port}`);
+  beforeAll(async () => {
+    const config: ServerConfig = {
+      port: 0,
+      pulsarUrl: 'pulsar://localhost:6650',
+      pulsarTenant: 'public',
+      pulsarNamespace: 'default',
+      pulsarTopicPrefix: 'yjs-doc-',
+    };
+    serverInstance = await startServer(config);
+    const address = serverInstance.httpServer.address() as AddressInfo;
+    port = address.port;
+  });
+
+  afterAll(async () => {
+    await serverInstance?.stop();
+  });
+
+  const createSyncedProvider = (doc: Y.Doc): Promise<WebsocketProvider> => {
+    const provider = new WebsocketProvider(`ws://localhost:${port}`, docName, doc, { WebSocketPolyfill: require('ws') });
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Sync timeout'));
+      }, 5000);
+      
+      provider.on('sync', (isSynced: boolean) => {
+        clearTimeout(timeout);
+        if (isSynced) {
+          resolve(provider);
+        } else {
+          reject(new Error('Failed to sync'));
+        }
+      });
+      
+      provider.on('connection-error', () => {
+        clearTimeout(timeout);
+        reject(new Error('Connection error'));
+      });
     });
+  };
 
-    afterAll(() => {
-        console.log('[TEST] afterAll: Starting shutdown...');
-        return new Promise<void>(resolve => {
-            // Gracefully close all client connections
-            for (const ws of serverInstance.wss.clients) {
-                ws.close();
-            }
-
-            serverInstance.wss.close(async () => {
-                await serverInstance.pulsar.close();
-                serverInstance.server.close(() => {
-                    messageBus.clear();
-                    console.log('[TEST] afterAll: Shutdown complete.');
-                    resolve();
-                });
-            });
-        });
+  const waitForUpdate = (doc: Y.Doc): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Update timeout'));
+      }, 5000);
+      
+      doc.on('update', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
     });
+  };
 
-    afterEach(() => {
-        provider1?.destroy();
-        provider2?.destroy();
-        provider1 = null;
-        provider2 = null;
-    });
+  test('should sync updates between two clients', async () => {
+    const doc1 = new Y.Doc();
+    const doc2 = new Y.Doc();
 
-    test('should sync updates between two clients', async () => {
-        console.log('[TEST] Running test: should sync updates between two clients');
-        const doc1 = new Y.Doc();
-        provider1 = new WebsocketProvider(`ws://localhost:${port}`, docName, doc1, { WebSocketPolyfill: require('ws') });
-        provider1.on('status', (event: any) => console.log(`[PROVIDER 1] Status: ${event.status}`))
-        const array1 = doc1.getArray('test-array');
+    let provider1: WebsocketProvider | null = null;
+    let provider2: WebsocketProvider | null = null;
 
-        const doc2 = new Y.Doc();
-        provider2 = new WebsocketProvider(`ws://localhost:${port}`, docName, doc2, { WebSocketPolyfill: require('ws') });
-        provider2.on('status', (event: any) => console.log(`[PROVIDER 2] Status: ${event.status}`))
-        const array2 = doc2.getArray('test-array');
+    try {
+      [provider1, provider2] = await Promise.all([
+        createSyncedProvider(doc1),
+        createSyncedProvider(doc2),
+      ]);
 
-        console.log('[TEST] Waiting for provider 2 to sync...');
-        await new Promise(resolve => provider2!.on('sync', (isSynced: boolean) => {
-            if (isSynced) {
-                console.log('[TEST] Provider 2 synced.');
-                resolve(true);
-            }
-        }));
+      const array1 = doc1.getArray('test-array');
+      const array2 = doc2.getArray('test-array');
 
-        const updatePromise = new Promise(resolve => {
-            array2.observe(() => {
-                console.log('[TEST] Received update on doc2');
-                expect(array2.toArray()).toEqual(['hello']);
-                resolve(true);
-            });
-        });
+      const updatePromise = waitForUpdate(doc2);
 
-        console.log('[TEST] Pushing update to doc1...');
-        array1.push(['hello']);
+      array1.insert(0, ['hello']);
 
-        await updatePromise;
-        console.log('[TEST] Update confirmed.');
-    }, 10000);
+      await updatePromise;
+
+      expect(array2.toJSON()).toEqual(['hello']);
+    } finally {
+      if (provider1) {
+        provider1.destroy();
+      }
+      if (provider2) {
+        provider2.destroy();
+      }
+      doc1.destroy();
+      doc2.destroy();
+    }
+  }, 10000);
 });
