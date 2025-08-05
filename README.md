@@ -115,7 +115,7 @@ Deploy the demo to Clever Cloud with a dedicated Pulsar add-on:
 
 # Or manual deployment
 clever create yjs-pulsar-demo --type node
-clever addon create pulsar-addon PULSAR
+clever addon create pulsar-addon addon-pulsar
 clever addon link pulsar-addon
 clever deploy
 ```

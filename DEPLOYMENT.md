@@ -43,7 +43,7 @@ clever link yjs-pulsar-demo
 
 ```bash
 # Create Pulsar add-on
-clever addon create pulsar-addon PULSAR
+clever addon create pulsar-addon addon-pulsar
 
 # Link to application
 clever addon link pulsar-addon

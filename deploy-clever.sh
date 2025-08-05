@@ -24,7 +24,7 @@ clever create "$APP_NAME" --type node
 
 # Ajouter l'add-on Pulsar
 echo "📡 Adding Pulsar add-on..."
-clever addon create pulsar-addon PULSAR
+clever addon create pulsar-addon addon-pulsar
 
 # Lier l'add-on à l'application
 echo "🔗 Linking Pulsar add-on..."
