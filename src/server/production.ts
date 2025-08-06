@@ -3,8 +3,6 @@ import 'dotenv/config';
 import { startServer, ServerConfig } from './index';
 import path from 'path';
 
-const __dirname = path.dirname(__filename);
-
 async function startProductionServer() {
   const port = parseInt(process.env.PORT || '8080');
   
