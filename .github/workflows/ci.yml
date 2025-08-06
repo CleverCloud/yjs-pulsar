@@ -36,12 +36,24 @@ jobs:
       env:
         NODE_ENV: test
 
+    - name: Start MinIO for snapshot tests
+      run: |
+        docker run -d -p 9000:9000 --name minio-unit-tests \
+          -e "MINIO_ROOT_USER=minioadmin" \
+          -e "MINIO_ROOT_PASSWORD=minioadmin" \
+          minio/minio server /data
+        sleep 3
+
     - name: Run snapshot storage tests
       run: npx jest tests/storage/pulsar-storage.spec.ts tests/storage/snapshot-format.spec.ts --runInBand
       env:
         NODE_ENV: test
         STORAGE_TYPE: pulsar
         SNAPSHOT_INTERVAL: 30
+        S3_ACCESS_KEY_ID: minioadmin
+        S3_SECRET_ACCESS_KEY: minioadmin
+        S3_ENDPOINT: http://localhost:9000
+        S3_BUCKET: test-bucket
 
     - name: Run basic E2E tests (mock only)
       run: npx jest tests/e2e/simple.spec.ts --runInBand
@@ -77,7 +89,25 @@ jobs:
         PULSAR_TOPIC_PREFIX: "ci-test-"
         STORAGE_TYPE: "none"
 
-    - name: Run E2E snapshot storage tests with real Pulsar
+    - name: Start MinIO for S3 testing
+      run: |
+        docker run -d -p 9000:9000 --name minio \
+          -e "MINIO_ROOT_USER=minioadmin" \
+          -e "MINIO_ROOT_PASSWORD=minioadmin" \
+          minio/minio server /data
+        
+        # Wait for MinIO to be ready
+        sleep 5
+        
+        # Install mc (MinIO client)
+        wget -q https://dl.min.io/client/mc/release/linux-amd64/mc
+        chmod +x mc
+        
+        # Configure mc and create bucket
+        ./mc alias set myminio http://localhost:9000 minioadmin minioadmin
+        ./mc mb myminio/test-bucket || true
+
+    - name: Run E2E snapshot storage tests with real Pulsar and MinIO
       run: npx jest tests/e2e/snapshot-storage.spec.ts --runInBand
       env:
         NODE_ENV: test
@@ -85,10 +115,10 @@ jobs:
         ADDON_PULSAR_TOKEN: ${{ secrets.ADDON_PULSAR_TOKEN }}
         ADDON_PULSAR_TENANT: ${{ secrets.ADDON_PULSAR_TENANT }}
         ADDON_PULSAR_NAMESPACE: ${{ secrets.ADDON_PULSAR_NAMESPACE }}
-        S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-        S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-        S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
-        S3_BUCKET: ${{ secrets.S3_BUCKET }}
+        S3_ACCESS_KEY_ID: minioadmin
+        S3_SECRET_ACCESS_KEY: minioadmin
+        S3_ENDPOINT: http://localhost:9000
+        S3_BUCKET: test-bucket
         PULSAR_TOPIC_PREFIX: "ci-snapshot-test-"
         STORAGE_TYPE: "pulsar"
         SNAPSHOT_INTERVAL: "10"
