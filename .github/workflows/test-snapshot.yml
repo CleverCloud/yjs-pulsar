@@ -27,16 +27,26 @@ jobs:
       run: npm ci
 
     - name: Run snapshot format tests
-      run: npx jest tests/storage/snapshot-format.spec.ts --runInBand --verbose
+      run: npx jest tests/storage/snapshot-format.spec.ts --runInBand --verbose 2>&1 | tee snapshot-format-results.log
       env:
         NODE_ENV: test
 
     - name: Run PulsarStorage unit tests with mocks
-      run: npx jest tests/storage/pulsar-storage.spec.ts --runInBand --verbose
+      run: npx jest tests/storage/pulsar-storage.spec.ts --runInBand --verbose 2>&1 | tee pulsar-storage-unit-results.log
       env:
         NODE_ENV: test
         STORAGE_TYPE: pulsar
         SNAPSHOT_INTERVAL: 30
+
+    - name: Upload unit test artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: snapshot-unit-test-results
+        path: |
+          snapshot-format-results.log
+          pulsar-storage-unit-results.log
+        retention-days: 30
 
   test-snapshot-integration:
     name: Snapshot Storage Integration Tests
@@ -77,7 +87,7 @@ jobs:
         echo "✅ MinIO bucket created"
 
     - name: Run S3 MinIO integration tests
-      run: npx jest tests/storage/s3-minio.spec.ts --runInBand --verbose
+      run: npx jest tests/storage/s3-minio.spec.ts --runInBand --verbose 2>&1 | tee s3-integration-results.log
       env:
         NODE_ENV: test
         CI: true
@@ -87,11 +97,21 @@ jobs:
         S3_BUCKET: test-bucket
 
     - name: Run snapshot storage unit tests
-      run: npx jest tests/storage/pulsar-storage.spec.ts --runInBand --verbose
+      run: npx jest tests/storage/pulsar-storage.spec.ts --runInBand --verbose 2>&1 | tee pulsar-storage-integration-results.log
       env:
         NODE_ENV: test
         STORAGE_TYPE: pulsar
         SNAPSHOT_INTERVAL: 10
+
+    - name: Upload integration test artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: snapshot-integration-test-results
+        path: |
+          s3-integration-results.log
+          pulsar-storage-integration-results.log
+        retention-days: 30
 
   validate-build:
     name: Validate TypeScript Build

@@ -32,7 +32,7 @@ jobs:
       run: npx tsc --noEmit
 
     - name: Run unit tests
-      run: npm test
+      run: npm test 2>&1 | tee test-results.log
       env:
         NODE_ENV: test
 
@@ -45,7 +45,7 @@ jobs:
         sleep 3
 
     - name: Run snapshot storage tests
-      run: npx jest tests/storage/pulsar-storage.spec.ts tests/storage/snapshot-format.spec.ts --runInBand
+      run: npx jest tests/storage/pulsar-storage.spec.ts tests/storage/snapshot-format.spec.ts --runInBand 2>&1 | tee snapshot-test-results.log
       env:
         NODE_ENV: test
         STORAGE_TYPE: pulsar
@@ -56,9 +56,20 @@ jobs:
         S3_BUCKET: test-bucket
 
     - name: Run basic E2E tests (mock only)
-      run: npx jest tests/e2e/simple.spec.ts --runInBand
+      run: npx jest tests/e2e/simple.spec.ts --runInBand 2>&1 | tee e2e-test-results.log
       env:
         NODE_ENV: test
+
+    - name: Upload test artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-node-${{ matrix.node-version }}
+        path: |
+          test-results.log
+          snapshot-test-results.log
+          e2e-test-results.log
+        retention-days: 30
 
   test-with-pulsar:
     name: Tests E2E avec Pulsar Réel
@@ -79,7 +90,7 @@ jobs:
       run: npm ci
 
     - name: Run E2E tests with real Pulsar
-      run: npm run test:e2e
+      run: npm run test:e2e 2>&1 | tee pulsar-e2e-results.log
       env:
         NODE_ENV: test
         ADDON_PULSAR_BINARY_URL: ${{ secrets.ADDON_PULSAR_BINARY_URL }}
@@ -108,7 +119,7 @@ jobs:
         ./mc mb myminio/test-bucket || true
 
     - name: Run E2E snapshot storage tests with real Pulsar and MinIO
-      run: npx jest tests/e2e/snapshot-storage.spec.ts --runInBand
+      run: npx jest tests/e2e/snapshot-storage.spec.ts --runInBand 2>&1 | tee snapshot-e2e-results.log
       env:
         NODE_ENV: test
         ADDON_PULSAR_BINARY_URL: ${{ secrets.ADDON_PULSAR_BINARY_URL }}
@@ -122,6 +133,16 @@ jobs:
         PULSAR_TOPIC_PREFIX: "ci-snapshot-test-"
         STORAGE_TYPE: "pulsar"
         SNAPSHOT_INTERVAL: "10"
+
+    - name: Upload Pulsar test artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: pulsar-test-results
+        path: |
+          pulsar-e2e-results.log
+          snapshot-e2e-results.log
+        retention-days: 30
 
   build-demo:
     name: Build Demo
@@ -168,4 +189,12 @@ jobs:
       run: npm ci
 
     - name: Run security audit
-      run: npm audit --audit-level=moderate
+      run: npm audit --audit-level=moderate 2>&1 | tee security-audit-results.log
+
+    - name: Upload security audit artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: security-audit-results
+        path: security-audit-results.log
+        retention-days: 30
