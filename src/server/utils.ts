@@ -350,24 +350,56 @@ export const onMessage = (conn: ws.WebSocket, doc: YDoc, message: Uint8Array) =>
             return;
         }
         
+        // Additional validation: messages should have at least 1 byte for messageType
+        if (message.length < 1) {
+            console.warn(`[${doc.name}] Received message too short (${message.length} bytes), ignoring`);
+            return;
+        }
+        
+        console.log(`[${doc.name}] Processing message: length=${message.length}, bytes=[${Array.from(message.slice(0, 10)).join(', ')}${message.length > 10 ? ', ...' : ''}]`);
+        
         const decoder = decoding.createDecoder(message);
-        const messageType = decoding.readVarUint(decoder);
+        
+        // Safely read messageType with additional error checking
+        let messageType: number;
+        try {
+            messageType = decoding.readVarUint(decoder);
+        } catch (decodeErr) {
+            console.error(`[${doc.name}] Failed to decode message type from message of length ${message.length}:`, decodeErr);
+            console.error(`[${doc.name}] Message bytes:`, Array.from(message));
+            conn.close(1003, 'Invalid message format - cannot decode message type');
+            return;
+        }
         switch (messageType) {
             case messageSync:
                 encoding.writeVarUint(encoder, messageSync);
-                syncProtocol.readSyncMessage(decoder, encoder, doc, conn);
-                if (encoding.length(encoder) > 1) {
-                    send(doc, conn, encoding.toUint8Array(encoder));
-                } else {
-                    // Client is synced
-                    const syncDoneEncoder = encoding.createEncoder();
-                    encoding.writeVarUint(syncDoneEncoder, messageSync);
-                    syncProtocol.writeSyncStep2(syncDoneEncoder, doc, new Uint8Array()); // Empty update
-                    send(doc, conn, encoding.toUint8Array(syncDoneEncoder));
+                try {
+                    syncProtocol.readSyncMessage(decoder, encoder, doc, conn);
+                    if (encoding.length(encoder) > 1) {
+                        send(doc, conn, encoding.toUint8Array(encoder));
+                    } else {
+                        // Client is synced
+                        const syncDoneEncoder = encoding.createEncoder();
+                        encoding.writeVarUint(syncDoneEncoder, messageSync);
+                        syncProtocol.writeSyncStep2(syncDoneEncoder, doc, new Uint8Array()); // Empty update
+                        send(doc, conn, encoding.toUint8Array(syncDoneEncoder));
+                    }
+                } catch (syncErr) {
+                    console.error(`[${doc.name}] Error in syncProtocol.readSyncMessage:`, syncErr);
+                    console.error(`[${doc.name}] Problematic sync message bytes:`, Array.from(message));
+                    conn.close(1003, 'Invalid sync message format');
+                    return;
                 }
                 break;
             case messageAwareness:
-                awarenessProtocol.applyAwarenessUpdate(doc.awareness, decoding.readVarUint8Array(decoder), conn);
+                try {
+                    awarenessProtocol.applyAwarenessUpdate(doc.awareness, decoding.readVarUint8Array(decoder), conn);
+                } catch (awarenessErr) {
+                    console.error(`[${doc.name}] Error in awareness update:`, awarenessErr);
+                    console.error(`[${doc.name}] Problematic awareness message bytes:`, Array.from(message));
+                    conn.close(1003, 'Invalid awareness message format');
+                    return;
+                }
                 break;
             default:
                 console.warn(`[${doc.name}] Unknown message type: ${messageType}`);
