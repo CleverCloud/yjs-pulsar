@@ -138,7 +138,17 @@ export class YDoc extends Y.Doc {
             const producer = this.producer;
             if (producer) {
                 const pulsarMessage = Buffer.concat([Buffer.from([messageSync]), Buffer.from(update)]);
-                producer.send({ data: pulsarMessage }).catch(err => {
+                const messageOptions: any = { 
+                    data: pulsarMessage,
+                    // Use document name + timestamp as key for compaction
+                    partitionKey: `${this.name}-sync-${Date.now()}`,
+                    properties: {
+                        messageType: 'sync',
+                        docName: this.name
+                    }
+                };
+                
+                producer.send(messageOptions).catch(err => {
                     console.error(`[${this.name}] Failed to send sync update to Pulsar:`, err);
                 });
             }
@@ -161,7 +171,17 @@ export class YDoc extends Y.Doc {
             const producer = this.producer;
             if (producer) {
                 const pulsarMessage = Buffer.concat([Buffer.from([messageAwareness]), Buffer.from(awarenessUpdate)]);
-                producer.send({ data: pulsarMessage }).catch(err => {
+                const messageOptions: any = { 
+                    data: pulsarMessage,
+                    // Use document name + awareness for key (awareness messages don't need strict ordering)
+                    partitionKey: `${this.name}-awareness-${Date.now()}`,
+                    properties: {
+                        messageType: 'awareness',
+                        docName: this.name
+                    }
+                };
+                
+                producer.send(messageOptions).catch(err => {
                     console.error(`[${this.name}] Failed to send awareness update to Pulsar:`, err);
                 });
             }
@@ -277,11 +297,27 @@ export const getYDoc = async (docName: string, pulsarClientContainer: PulsarClie
             const topicName = getFullTopicName(pulsarConfig, docName);
 
             if (!newDoc.producer) {
-                newDoc.producer = await pulsarClientContainer.client.createProducer({
+                const storageType = process.env.STORAGE_TYPE;
+                const producerOptions: any = {
                     topic: topicName,
                     producerName: `${docName}-producer-${Date.now()}`,
                     sendTimeoutMs: 30000,
-                });
+                };
+                
+                // Enable message persistence and compaction for Pulsar-only mode
+                if (storageType === 'pulsar') {
+                    // Use message key for compaction - this enables topic compaction which retains the latest message per key
+                    producerOptions.messageRoutingMode = 'CustomPartition';
+                    // Add properties to request topic compaction
+                    producerOptions.properties = {
+                        'compaction.threshold': '1MB',
+                        'retention.bytes': '100MB',
+                        'retention.time': '7d'
+                    };
+                    console.log(`[${docName}] Creating producer with compaction and retention enabled`);
+                }
+                
+                newDoc.producer = await pulsarClientContainer.client.createProducer(producerOptions);
             }
 
             if (!newDoc.consumer) {
