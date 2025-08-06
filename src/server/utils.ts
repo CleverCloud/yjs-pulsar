@@ -10,7 +10,7 @@ import Pulsar from 'pulsar-client';
 
 import { ServerConfig, PulsarClientContainer } from '../types';
 import { cleanupManager } from './cleanup';
-import { Storage, S3Storage } from '../storage';
+import { Storage, S3Storage, PulsarStorage } from '../storage';
 
 const wsReadyStateConnecting = 0;
 const wsReadyStateOpen = 1;
@@ -32,16 +32,34 @@ export const resetStorage = () => {
     storageInitialized = false;
 };
 
-export const getStorage = (): Storage | null => {
-    if (!storageInitialized) {
-        const storageType = process.env.STORAGE_TYPE;
-        if (storageType === 's3') {
+export const initializeStorage = (pulsarClient: Pulsar.Client, config: ServerConfig): void => {
+    if (storageInitialized) return;
+
+    const storageType = process.env.STORAGE_TYPE;
+    
+    switch (storageType) {
+        case 's3':
             storage = new S3Storage();
-        } else {
+            console.log('💾 Using S3 storage mode for document persistence');
+            break;
+        case 'pulsar':
+            storage = new PulsarStorage(
+                pulsarClient,
+                config.pulsarTenant || 'public',
+                config.pulsarNamespace || 'default',
+                config.pulsarTopicPrefix || 'yjs-doc-'
+            );
+            console.log('🔄 Using Pulsar-only storage mode for document persistence');
+            break;
+        default:
+            console.log('📝 Storage disabled (STORAGE_TYPE=none or not set)');
             storage = null;
-        }
-        storageInitialized = true;
+            break;
     }
+    storageInitialized = true;
+};
+
+export const getStorage = (): Storage | null => {
     return storage;
 };
 

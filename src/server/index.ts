@@ -2,7 +2,7 @@ import express from 'express';
 import 'dotenv/config'; // Load environment variables from .env file
 import http from 'http';
 import * as ws from 'ws';
-import { setupWSConnection, createPulsarClient } from './utils';
+import { setupWSConnection, createPulsarClient, initializeStorage } from './utils';
 import Pulsar from 'pulsar-client';
 import { NoAuthStrategy } from './auth';
 import { ServerConfig, PulsarClientContainer, AuthStrategy, YjsPulsarServer } from '../types';
@@ -13,6 +13,9 @@ export const startServer = async (config: ServerConfig): Promise<YjsPulsarServer
     const pulsarClientContainer = {
         client: config.pulsarClient ?? createPulsarClient(config)
     };
+
+    // Initialize storage based on configuration
+    initializeStorage(pulsarClientContainer.client, config);
 
     const app = express();
     const httpServer = http.createServer(app);
