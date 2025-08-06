@@ -283,17 +283,36 @@ export const getYDoc = async (docName: string, pulsarClientContainer: PulsarClie
                     try {
                         const receivedMsg = await consumer.receive();
                         const data = receivedMsg.getData();
+                        
+                        if (!data || data.length === 0) {
+                            console.warn(`[${docName}] Received empty message from Pulsar, ignoring`);
+                            await consumer.acknowledge(receivedMsg);
+                            continue;
+                        }
+                        
                         const messageType = data[0];
                         const update = data.slice(1);
 
+                        if (update.length === 0) {
+                            console.warn(`[${docName}] Received message with empty update from Pulsar, ignoring`);
+                            await consumer.acknowledge(receivedMsg);
+                            continue;
+                        }
+
                         newDoc.mux(() => {
-                            switch (messageType) {
-                                case messageSync:
-                                    Y.applyUpdate(newDoc, update, PULSAR_ORIGIN);
-                                    break;
-                                case messageAwareness:
-                                    awarenessProtocol.applyAwarenessUpdate(newDoc.awareness, update, PULSAR_ORIGIN);
-                                    break;
+                            try {
+                                switch (messageType) {
+                                    case messageSync:
+                                        Y.applyUpdate(newDoc, update, PULSAR_ORIGIN);
+                                        break;
+                                    case messageAwareness:
+                                        awarenessProtocol.applyAwarenessUpdate(newDoc.awareness, update, PULSAR_ORIGIN);
+                                        break;
+                                    default:
+                                        console.warn(`[${docName}] Unknown Pulsar message type: ${messageType}`);
+                                }
+                            } catch (updateErr) {
+                                console.error(`[${docName}] Error applying Pulsar update:`, updateErr);
                             }
                         });
                         await consumer.acknowledge(receivedMsg);
