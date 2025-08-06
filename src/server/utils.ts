@@ -124,7 +124,9 @@ export class YDoc extends Y.Doc {
             const producer = this.producer;
             if (producer) {
                 const pulsarMessage = Buffer.concat([Buffer.from([messageSync]), Buffer.from(update)]);
-                producer.send({ data: pulsarMessage });
+                producer.send({ data: pulsarMessage }).catch(err => {
+                    console.error(`[${this.name}] Failed to send sync update to Pulsar:`, err);
+                });
             }
         }
     }
@@ -145,7 +147,9 @@ export class YDoc extends Y.Doc {
             const producer = this.producer;
             if (producer) {
                 const pulsarMessage = Buffer.concat([Buffer.from([messageAwareness]), Buffer.from(awarenessUpdate)]);
-                producer.send({ data: pulsarMessage });
+                producer.send({ data: pulsarMessage }).catch(err => {
+                    console.error(`[${this.name}] Failed to send awareness update to Pulsar:`, err);
+                });
             }
         }
     }
