@@ -50,7 +50,8 @@
       "WebFetch(domain:pulsar.apache.org)",
       "WebFetch(domain:github.com)",
       "Bash(unzip:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(git push:*)"
     ],
     "deny": []
   }
