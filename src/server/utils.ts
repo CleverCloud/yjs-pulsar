@@ -370,10 +370,8 @@ export const onMessage = (conn: ws.WebSocket, doc: YDoc, message: Uint8Array) =>
         try {
             messageType = decoding.readVarUint(decoder);
         } catch (decodeErr) {
-            console.error(`[${doc.name}] Failed to decode message type from message of length ${message.length}:`, decodeErr);
-            console.error(`[${doc.name}] Message bytes:`, Array.from(message));
-            conn.close(1003, 'Invalid message format - cannot decode message type');
-            return;
+            console.warn(`[${doc.name}] Failed to decode message type from message of length ${message.length}, ignoring:`, decodeErr);
+            return; // Just ignore malformed messages, don't close connection
         }
         switch (messageType) {
             case messageSync:
@@ -390,20 +388,16 @@ export const onMessage = (conn: ws.WebSocket, doc: YDoc, message: Uint8Array) =>
                         send(doc, conn, encoding.toUint8Array(syncDoneEncoder));
                     }
                 } catch (syncErr) {
-                    console.error(`[${doc.name}] Error in syncProtocol.readSyncMessage:`, syncErr);
-                    console.error(`[${doc.name}] Problematic sync message bytes:`, Array.from(message));
-                    conn.close(1003, 'Invalid sync message format');
-                    return;
+                    console.warn(`[${doc.name}] Error in syncProtocol.readSyncMessage, ignoring message:`, syncErr);
+                    return; // Just ignore problematic messages, don't close connection
                 }
                 break;
             case messageAwareness:
                 try {
                     awarenessProtocol.applyAwarenessUpdate(doc.awareness, decoding.readVarUint8Array(decoder), conn);
                 } catch (awarenessErr) {
-                    console.error(`[${doc.name}] Error in awareness update:`, awarenessErr);
-                    console.error(`[${doc.name}] Problematic awareness message bytes:`, Array.from(message));
-                    conn.close(1003, 'Invalid awareness message format');
-                    return;
+                    console.warn(`[${doc.name}] Error in awareness update, ignoring message:`, awarenessErr);
+                    return; // Just ignore problematic messages, don't close connection
                 }
                 break;
             default:
