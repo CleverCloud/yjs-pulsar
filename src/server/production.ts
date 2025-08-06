@@ -28,7 +28,7 @@ async function startProductionServer() {
     const app = express();
     
     // Servir les fichiers statiques de la demo depuis le dossier dist
-    const demoPath = path.resolve(__dirname, '../../demo/dist');
+    const demoPath = path.resolve(__dirname, '../');
     console.log(`📁 Serving demo from: ${demoPath}`);
     
     app.use(express.static(demoPath));
