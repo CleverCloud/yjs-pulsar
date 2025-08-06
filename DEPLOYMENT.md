@@ -147,7 +147,11 @@ ADDON_PULSAR_NAMESPACE=...
 # Manually configured
 NODE_ENV=production
 PULSAR_TOPIC_PREFIX=yjs-demo-
-STORAGE_TYPE=none
+STORAGE_TYPE=s3
+S3_ENDPOINT=https://cellar-c2.services.clever-cloud.com
+S3_BUCKET=yjs-test-bucket
+S3_ACCESS_KEY_ID=...
+S3_SECRET_ACCESS_KEY=...
 PORT=8080  # Set by Clever Cloud
 ```
 
