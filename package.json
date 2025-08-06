@@ -11,7 +11,7 @@
     "demo": "vite demo",
     "build": "npm run build:demo && npm run build:server",
     "build:demo": "vite build demo",
-    "build:server": "tsc && cp package.json dist/",
+    "build:server": "tsc && node -e \"const pkg = require('./package.json'); pkg.type = 'commonjs'; require('fs').writeFileSync('dist/package.json', JSON.stringify(pkg, null, 2))\"",
     "start:production": "npm run build && node dist/server/production.js"
   },
   "keywords": [],
