@@ -40,7 +40,7 @@ export class PulsarStorage implements Storage {
     let consumer: Pulsar.Consumer | null = null;
     
     try {
-      console.log(`[PulsarStorage] Restoring document ${documentName} from Pulsar topic`);
+      console.log(`[PulsarStorage] Restoring document ${documentName} from Pulsar topic: ${topicName}`);
       
       // Create a temporary consumer to replay all messages
       consumer = await this.client.subscribe({
@@ -49,6 +49,8 @@ export class PulsarStorage implements Storage {
         subscriptionType: 'Exclusive',
         subscriptionInitialPosition: 'Earliest', // Start from the very beginning
       });
+
+      console.log(`[PulsarStorage] Consumer created successfully for ${documentName}`);
 
       // Create a temporary Yjs document to apply all operations
       const ydoc = new Y.Doc();
@@ -63,16 +65,32 @@ export class PulsarStorage implements Storage {
 
       // Replay all messages to reconstruct document state
       const replayPromise = (async () => {
+        let consecutiveEmptyReceives = 0;
+        const MAX_EMPTY_RECEIVES = 5; // Stop after 5 consecutive empty receives
+        
         while (await consumer!.isConnected()) {
           try {
-            const receivedMsg = await consumer!.receive();
+            // Set a timeout for receive to avoid hanging indefinitely
+            const receiveTimeout = new Promise((_, reject) => {
+              setTimeout(() => reject(new Error('Receive timeout')), 2000);
+            });
+            
+            const receivePromise = consumer!.receive();
+            const receivedMsg = await Promise.race([receivePromise, receiveTimeout]) as any;
+            
             const data = receivedMsg.getData();
             
             if (!data || data.length === 0) {
               await consumer!.acknowledge(receivedMsg);
+              consecutiveEmptyReceives++;
+              if (consecutiveEmptyReceives >= MAX_EMPTY_RECEIVES) {
+                console.log(`[PulsarStorage] ${MAX_EMPTY_RECEIVES} consecutive empty messages, stopping replay`);
+                break;
+              }
               continue;
             }
 
+            consecutiveEmptyReceives = 0; // Reset counter when we get data
             const messageType = data[0];
             const update = data.slice(1);
 
@@ -83,23 +101,27 @@ export class PulsarStorage implements Storage {
 
             // Apply the update to our temporary document
             if (messageType === 0) { // messageSync
-              Y.applyUpdate(ydoc, update);
-              messageCount++;
+              try {
+                Y.applyUpdate(ydoc, update);
+                messageCount++;
+                console.log(`[PulsarStorage] Applied message ${messageCount} for document ${documentName}`);
+              } catch (applyError) {
+                console.warn(`[PulsarStorage] Failed to apply update:`, applyError);
+              }
             }
             // Ignore awareness messages (messageType === 1) for document restoration
 
             await consumer!.acknowledge(receivedMsg);
             
-            // Check if we've caught up (no more messages available)
-            // This is a heuristic - in a real implementation, you might want
-            // to check message timestamps or use a more sophisticated method
-            if (messageCount > 0 && Date.now() - startTime > 1000) {
-              // If we haven't received messages for 1 second, assume we're caught up
+          } catch (error: any) {
+            if (error?.message === 'Receive timeout') {
+              // No more messages available
+              console.log(`[PulsarStorage] No more messages available, stopping replay`);
+              break;
+            } else {
+              console.warn(`[PulsarStorage] Error during replay:`, error);
               break;
             }
-          } catch (error) {
-            // If we can't receive more messages, we're probably caught up
-            break;
           }
         }
       })();
