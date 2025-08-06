@@ -51,8 +51,10 @@ async function startProductionServer() {
       });
     });
     
-    // Remplacer le serveur HTTP du serveur Yjs par notre app Express
-    yjsServer.httpServer.on('request', app);
+    // Intégrer Express avec le serveur HTTP existant
+    const server = yjsServer.httpServer;
+    server.removeAllListeners('request');
+    server.on('request', app);
     
     console.log(`✅ Demo server running on http://localhost:${port}`);
     console.log(`🔗 WebSocket server ready for Yjs collaboration`);
