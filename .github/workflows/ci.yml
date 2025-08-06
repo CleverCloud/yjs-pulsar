@@ -31,11 +31,17 @@ jobs:
     - name: Run TypeScript check
       run: npx tsc --noEmit
 
-    - name: Run unit tests
-      run: npm test -- --forceExit 2>&1 | tee test-results.log; exit ${PIPESTATUS[0]}
+    - name: Run unit tests - Core functionality
+      run: npx jest tests/ --runInBand --forceExit --testPathIgnorePatterns="tests/storage" --testPathIgnorePatterns="tests/e2e" 2>&1 | tee test-results-core.log; exit ${PIPESTATUS[0]}
       env:
         NODE_ENV: test
-        NODE_OPTIONS: --max-old-space-size=8192
+        NODE_OPTIONS: --max-old-space-size=12288
+
+    - name: Run unit tests - Storage modules
+      run: npx jest tests/storage/ --runInBand --forceExit 2>&1 | tee test-results-storage.log; exit ${PIPESTATUS[0]}
+      env:
+        NODE_ENV: test
+        NODE_OPTIONS: --max-old-space-size=12288
 
     - name: Start MinIO for snapshot tests
       run: |
@@ -49,7 +55,7 @@ jobs:
       run: npx jest tests/storage/pulsar-storage.spec.ts tests/storage/snapshot-format.spec.ts --runInBand --forceExit 2>&1 | tee snapshot-test-results.log; exit ${PIPESTATUS[0]}
       env:
         NODE_ENV: test
-        NODE_OPTIONS: --max-old-space-size=8192
+        NODE_OPTIONS: --max-old-space-size=12288
         STORAGE_TYPE: pulsar
         SNAPSHOT_INTERVAL: 30
         S3_ACCESS_KEY_ID: minioadmin
@@ -61,7 +67,7 @@ jobs:
       run: npx jest tests/e2e/simple.spec.ts --runInBand --forceExit 2>&1 | tee e2e-test-results.log; exit ${PIPESTATUS[0]}
       env:
         NODE_ENV: test
-        NODE_OPTIONS: --max-old-space-size=8192
+        NODE_OPTIONS: --max-old-space-size=12288
 
     - name: Upload test artifacts
       uses: actions/upload-artifact@v4
@@ -69,7 +75,8 @@ jobs:
       with:
         name: test-results-node-${{ matrix.node-version }}
         path: |
-          test-results.log
+          test-results-core.log
+          test-results-storage.log
           snapshot-test-results.log
           e2e-test-results.log
         retention-days: 30
@@ -96,7 +103,7 @@ jobs:
       run: npm run test:e2e -- --forceExit 2>&1 | tee pulsar-e2e-results.log; exit ${PIPESTATUS[0]}
       env:
         NODE_ENV: test
-        NODE_OPTIONS: --max-old-space-size=8192
+        NODE_OPTIONS: --max-old-space-size=12288
         ADDON_PULSAR_BINARY_URL: ${{ secrets.ADDON_PULSAR_BINARY_URL }}
         ADDON_PULSAR_TOKEN: ${{ secrets.ADDON_PULSAR_TOKEN }}
         ADDON_PULSAR_TENANT: ${{ secrets.ADDON_PULSAR_TENANT }}
@@ -126,7 +133,7 @@ jobs:
       run: npx jest tests/e2e/snapshot-storage.spec.ts --runInBand --forceExit 2>&1 | tee snapshot-e2e-results.log; exit ${PIPESTATUS[0]}
       env:
         NODE_ENV: test
-        NODE_OPTIONS: --max-old-space-size=8192
+        NODE_OPTIONS: --max-old-space-size=12288
         ADDON_PULSAR_BINARY_URL: ${{ secrets.ADDON_PULSAR_BINARY_URL }}
         ADDON_PULSAR_TOKEN: ${{ secrets.ADDON_PULSAR_TOKEN }}
         ADDON_PULSAR_TENANT: ${{ secrets.ADDON_PULSAR_TENANT }}
