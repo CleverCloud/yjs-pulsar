@@ -3,7 +3,7 @@ import { S3Storage } from './s3';
 import Pulsar from 'pulsar-client';
 import * as Y from 'yjs';
 
-interface DocumentSnapshot {
+export interface DocumentSnapshot {
   state: number[]; // Array representation of Uint8Array for JSON serialization
   lastMessageId: string; // Serialized Pulsar MessageID
   messageCount: number;
