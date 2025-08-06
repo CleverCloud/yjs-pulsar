@@ -43,13 +43,15 @@ export const initializeStorage = (pulsarClient: Pulsar.Client, config: ServerCon
             console.log('💾 Using S3 storage mode for document persistence');
             break;
         case 'pulsar':
+            const snapshotInterval = parseInt(process.env.SNAPSHOT_INTERVAL || '30'); // Default 30 messages
             storage = new PulsarStorage(
                 pulsarClient,
                 config.pulsarTenant || 'public',
                 config.pulsarNamespace || 'default',
-                config.pulsarTopicPrefix || 'yjs-doc-'
+                config.pulsarTopicPrefix || 'yjs-doc-',
+                snapshotInterval
             );
-            console.log('🔄 Using Pulsar-only storage mode for document persistence');
+            console.log(`🔄 Using Pulsar+S3 hybrid storage mode (snapshots every ${snapshotInterval} messages)`);
             break;
         default:
             console.log('📝 Storage disabled (STORAGE_TYPE=none or not set)');

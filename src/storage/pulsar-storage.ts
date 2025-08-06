@@ -1,32 +1,98 @@
 import { Storage } from './storage';
+import { S3Storage } from './s3';
 import Pulsar from 'pulsar-client';
 import * as Y from 'yjs';
 
+interface DocumentSnapshot {
+  state: number[]; // Array representation of Uint8Array for JSON serialization
+  lastMessageId: string; // Serialized Pulsar MessageID
+  messageCount: number;
+  timestamp: number;
+}
+
 /**
- * Pulsar-only storage implementation with compaction support
- * Documents are persisted by replaying all Pulsar messages from the beginning
- * Uses compacted topics to ensure message retention and efficient storage
+ * Pulsar-based storage with S3 snapshot checkpoints
+ * - Pulsar handles real-time collaboration messages
+ * - S3 stores periodic snapshots with MessageID checkpoints  
+ * - Document restoration: Load snapshot + replay from checkpoint
+ * - Prevents memory overflow by limiting replay to snapshot interval
  */
 export class PulsarStorage implements Storage {
   private client: Pulsar.Client;
   private tenant: string;
   private namespace: string;
   private topicPrefix: string;
+  private s3Storage: S3Storage;
+  private snapshotInterval: number; // Messages between snapshots
 
   constructor(
     client: Pulsar.Client,
     tenant: string,
     namespace: string, 
-    topicPrefix: string
+    topicPrefix: string,
+    snapshotInterval: number = 50 // Default: snapshot every 50 messages
   ) {
     this.client = client;
     this.tenant = tenant;
     this.namespace = namespace;
     this.topicPrefix = topicPrefix;
+    this.s3Storage = new S3Storage();
+    this.snapshotInterval = snapshotInterval;
   }
 
   private getTopicName(documentName: string): string {
     return `persistent://${this.tenant}/${this.namespace}/${this.topicPrefix}${documentName}`;
+  }
+
+  private getSnapshotKey(documentName: string): string {
+    return `snapshots/${documentName}.snapshot.json`;
+  }
+
+  /**
+   * Load the latest snapshot for a document from S3
+   */
+  private async loadSnapshot(documentName: string): Promise<DocumentSnapshot | null> {
+    try {
+      const snapshotKey = this.getSnapshotKey(documentName);
+      const snapshotData = await this.s3Storage.getDoc(snapshotKey);
+      
+      if (!snapshotData) {
+        console.log(`[PulsarStorage] No snapshot found for ${documentName}`);
+        return null;
+      }
+
+      const snapshot = JSON.parse(Buffer.from(snapshotData).toString());
+      // Convert state back to Uint8Array
+      snapshot.state = new Uint8Array(snapshot.state);
+      
+      console.log(`[PulsarStorage] Loaded snapshot for ${documentName}: ${snapshot.messageCount} messages, MessageID: ${snapshot.lastMessageId}`);
+      return snapshot;
+    } catch (error) {
+      console.warn(`[PulsarStorage] Failed to load snapshot for ${documentName}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Save a snapshot of the document state to S3 with Pulsar MessageID checkpoint
+   */
+  private async saveSnapshot(documentName: string, state: Uint8Array, lastMessageId: Pulsar.MessageId, messageCount: number): Promise<void> {
+    try {
+      const snapshot: DocumentSnapshot = {
+        state: Array.from(state), // Convert Uint8Array to regular array for JSON
+        lastMessageId: lastMessageId.toString(),
+        messageCount,
+        timestamp: Date.now()
+      };
+
+      const snapshotKey = this.getSnapshotKey(documentName);
+      const snapshotBuffer = Buffer.from(JSON.stringify(snapshot));
+      
+      await this.s3Storage.storeDoc(snapshotKey, snapshotBuffer);
+      console.log(`[PulsarStorage] Saved snapshot for ${documentName}: ${messageCount} messages, MessageID: ${lastMessageId.toString()}`);
+    } catch (error) {
+      console.error(`[PulsarStorage] Failed to save snapshot for ${documentName}:`, error);
+    }
   }
 
   async storeDoc(documentName: string, state: Uint8Array): Promise<void> {
@@ -82,85 +148,100 @@ export class PulsarStorage implements Storage {
     let reader: Pulsar.Reader | null = null;
     
     try {
-      console.log(`[PulsarStorage] Restoring document ${documentName} from Pulsar topic: ${topicName}`);
+      console.log(`[PulsarStorage] Restoring document ${documentName} using snapshot + incremental replay strategy`);
       
-      // Use Reader with compacted view to get only latest messages per key
-      // This is more efficient than consumer for replay scenarios
+      // Step 1: Try to load snapshot from S3
+      const snapshot = await this.loadSnapshot(documentName);
+      
+      // Step 2: Create Yjs document and apply snapshot if available
+      const ydoc = new Y.Doc();
+      let startMessageId = Pulsar.MessageId.earliest();
+      let baseMessageCount = 0;
+      
+      if (snapshot) {
+        // Apply snapshot state to document (convert from array back to Uint8Array)
+        const snapshotState = new Uint8Array(snapshot.state);
+        Y.applyUpdate(ydoc, snapshotState);
+        baseMessageCount = snapshot.messageCount;
+        
+        try {
+          // Parse the MessageID from string
+          startMessageId = Pulsar.MessageId.deserialize(Buffer.from(snapshot.lastMessageId, 'base64'));
+          console.log(`[PulsarStorage] Starting replay from snapshot checkpoint: ${snapshot.messageCount} messages`);
+        } catch (messageIdError) {
+          console.warn(`[PulsarStorage] Failed to parse snapshot MessageID, starting from earliest:`, messageIdError);
+          startMessageId = Pulsar.MessageId.earliest();
+        }
+      } else {
+        console.log(`[PulsarStorage] No snapshot found, starting from beginning of topic`);
+      }
+      
+      // Step 3: Create reader starting from checkpoint (or earliest if no snapshot)
       reader = await this.client.createReader({
         topic: topicName,
-        startMessageId: Pulsar.MessageId.earliest(),
+        startMessageId,
         readerName: `restore-${documentName}-${Date.now()}`,
-        readCompacted: true, // Only read latest message per key (compacted view)
+        readCompacted: true,
       });
 
-      console.log(`[PulsarStorage] Reader created successfully for ${documentName}`);
-
-      // Create a temporary Yjs document to apply all operations
-      const ydoc = new Y.Doc();
+      // Step 4: Replay messages from checkpoint (limited to snapshot interval)
       let messageCount = 0;
+      let lastMessageId: Pulsar.MessageId | null = null;
       const startTime = Date.now();
-
-      // Set a reasonable timeout for replay
-      const REPLAY_TIMEOUT = 30000; // 30 seconds
-      const timeoutPromise = new Promise<void>((_, reject) => {
-        setTimeout(() => reject(new Error('Replay timeout')), REPLAY_TIMEOUT);
-      });
-
-      // Replay messages to reconstruct document state using safer timeout-based approach
-      // Limit message replay to prevent memory issues and segfaults
+      
       const replayPromise = (async () => {
         let consecutiveTimeouts = 0;
-        const MAX_TIMEOUTS = 3; // Reduced from 5 to 3 for faster startup
-        const MAX_MESSAGES = 50; // Limit to 50 messages to prevent memory overflow
+        const MAX_TIMEOUTS = 3;
         
-        while (consecutiveTimeouts < MAX_TIMEOUTS && messageCount < MAX_MESSAGES) {
+        while (consecutiveTimeouts < MAX_TIMEOUTS && messageCount < this.snapshotInterval) {
           try {
-            // Use readNext with timeout - avoid hasNext() which can cause segfaults
-            const receivedMsg = await reader!.readNext(2000); // 2 second timeout
-            consecutiveTimeouts = 0; // Reset on successful read
+            const receivedMsg = await reader!.readNext(2000);
+            consecutiveTimeouts = 0;
+            lastMessageId = receivedMsg.getMessageId();
             
             const data = receivedMsg.getData();
-            
-            if (!data || data.length === 0) {
-              console.log(`[PulsarStorage] Empty message received, continuing`);
-              continue;
-            }
+            if (!data || data.length === 0) continue;
 
             const messageType = data[0];
             const update = data.slice(1);
+            if (update.length === 0) continue;
 
-            if (update.length === 0) {
-              continue;
-            }
-
-            // Apply the update to our temporary document
-            if (messageType === 0) { // messageSync
+            // Apply sync messages only
+            if (messageType === 0) {
               try {
                 Y.applyUpdate(ydoc, update);
                 messageCount++;
-                console.log(`[PulsarStorage] Applied message ${messageCount} for document ${documentName}`);
+                console.log(`[PulsarStorage] Applied incremental message ${messageCount} for document ${documentName}`);
               } catch (applyError) {
-                console.warn(`[PulsarStorage] Failed to apply update:`, applyError);
+                console.warn(`[PulsarStorage] Failed to apply incremental update:`, applyError);
               }
             }
-            // Ignore awareness messages (messageType === 1) for document restoration
             
           } catch (error: any) {
             consecutiveTimeouts++;
-            console.log(`[PulsarStorage] Read timeout ${consecutiveTimeouts}/${MAX_TIMEOUTS} - no more messages may be available`);
+            console.log(`[PulsarStorage] Incremental replay timeout ${consecutiveTimeouts}/${MAX_TIMEOUTS}`);
           }
         }
-        
-        console.log(`[PulsarStorage] Finished replay after ${MAX_TIMEOUTS} consecutive timeouts or ${MAX_MESSAGES} message limit reached`);
       })();
 
-      // Race between replay and timeout
-      await Promise.race([replayPromise, timeoutPromise]);
+      // Execute replay with timeout
+      const REPLAY_TIMEOUT = 15000; // Reduced timeout since we're doing incremental replay
+      await Promise.race([
+        replayPromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Incremental replay timeout')), REPLAY_TIMEOUT))
+      ]);
       
       const finalState = Y.encodeStateAsUpdate(ydoc);
       const duration = Date.now() - startTime;
+      const totalMessages = baseMessageCount + messageCount;
       
-      console.log(`[PulsarStorage] Restored document ${documentName}: ${messageCount} messages replayed in ${duration}ms`);
+      console.log(`[PulsarStorage] Document ${documentName} restored: ${messageCount} incremental messages (${totalMessages} total) in ${duration}ms`);
+      
+      // Step 5: Save new snapshot if we've processed enough new messages
+      if (messageCount >= this.snapshotInterval && lastMessageId) {
+        console.log(`[PulsarStorage] Creating new snapshot after ${messageCount} new messages`);
+        await this.saveSnapshot(documentName, finalState, lastMessageId, totalMessages);
+      }
       
       return finalState.length > 0 ? finalState : null;
 
