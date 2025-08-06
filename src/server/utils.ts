@@ -356,7 +356,8 @@ export const onMessage = (conn: ws.WebSocket, doc: YDoc, message: Uint8Array) =>
             return;
         }
         
-        console.log(`[${doc.name}] Processing message: length=${message.length}, bytes=[${Array.from(message.slice(0, 10)).join(', ')}${message.length > 10 ? ', ...' : ''}]`);
+        // Debug: uncomment next line if needed
+        // console.log(`[${doc.name}] Processing message: length=${message.length}, bytes=[${Array.from(message.slice(0, 10)).join(', ')}${message.length > 10 ? ', ...' : ''}]`);
         
         const decoder = decoding.createDecoder(message);
         

@@ -1,10 +1,10 @@
 {
   "apps": [
     {
-      "app_id": "app_ce09c0ed-0b90-4224-9f5e-2b4f483fbeb9",
+      "app_id": "app_4cd9e519-d029-4ea3-9db9-8958b8bc372f",
       "org_id": "user_abab0a19-e5d9-4dc2-9983-7de823a8f4af",
-      "deploy_url": "https://push-n3-par-clevercloud-customers.services.clever-cloud.com/app_ce09c0ed-0b90-4224-9f5e-2b4f483fbeb9.git",
-      "git_ssh_url": "git+ssh://git@push-n3-par-clevercloud-customers.services.clever-cloud.com/app_ce09c0ed-0b90-4224-9f5e-2b4f483fbeb9.git",
+      "deploy_url": "https://push-n3-par-clevercloud-customers.services.clever-cloud.com/app_4cd9e519-d029-4ea3-9db9-8958b8bc372f.git",
+      "git_ssh_url": "git+ssh://git@push-n3-par-clevercloud-customers.services.clever-cloud.com/app_4cd9e519-d029-4ea3-9db9-8958b8bc372f.git",
       "name": "yjs-pulsar-demo",
       "alias": "yjs-pulsar-demo"
     }
