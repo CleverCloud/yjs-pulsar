@@ -106,12 +106,14 @@ export class PulsarStorage implements Storage {
         setTimeout(() => reject(new Error('Replay timeout')), REPLAY_TIMEOUT);
       });
 
-      // Replay all messages to reconstruct document state using safer timeout-based approach
+      // Replay messages to reconstruct document state using safer timeout-based approach
+      // Limit message replay to prevent memory issues and segfaults
       const replayPromise = (async () => {
         let consecutiveTimeouts = 0;
-        const MAX_TIMEOUTS = 5; // Stop after 5 consecutive timeouts
+        const MAX_TIMEOUTS = 3; // Reduced from 5 to 3 for faster startup
+        const MAX_MESSAGES = 50; // Limit to 50 messages to prevent memory overflow
         
-        while (consecutiveTimeouts < MAX_TIMEOUTS) {
+        while (consecutiveTimeouts < MAX_TIMEOUTS && messageCount < MAX_MESSAGES) {
           try {
             // Use readNext with timeout - avoid hasNext() which can cause segfaults
             const receivedMsg = await reader!.readNext(2000); // 2 second timeout
@@ -149,7 +151,7 @@ export class PulsarStorage implements Storage {
           }
         }
         
-        console.log(`[PulsarStorage] Finished replay after ${MAX_TIMEOUTS} consecutive timeouts`);
+        console.log(`[PulsarStorage] Finished replay after ${MAX_TIMEOUTS} consecutive timeouts or ${MAX_MESSAGES} message limit reached`);
       })();
 
       // Race between replay and timeout
