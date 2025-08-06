@@ -46,7 +46,9 @@
       "mcp__playwright__browser_tab_select",
       "mcp__playwright__browser_type",
       "mcp__playwright__browser_wait_for",
-      "mcp__playwright__browser_snapshot"
+      "mcp__playwright__browser_snapshot",
+      "WebFetch(domain:pulsar.apache.org)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": []
   }

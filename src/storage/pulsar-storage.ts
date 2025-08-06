@@ -106,33 +106,24 @@ export class PulsarStorage implements Storage {
         setTimeout(() => reject(new Error('Replay timeout')), REPLAY_TIMEOUT);
       });
 
-      // Replay all messages to reconstruct document state
+      // Replay all messages to reconstruct document state using safer timeout-based approach
       const replayPromise = (async () => {
-        let consecutiveEmptyReceives = 0;
-        const MAX_EMPTY_RECEIVES = 5; // Stop after 5 consecutive empty receives
+        let consecutiveTimeouts = 0;
+        const MAX_TIMEOUTS = 5; // Stop after 5 consecutive timeouts
         
-        while (reader!.hasNext()) {
+        while (consecutiveTimeouts < MAX_TIMEOUTS) {
           try {
-            // Set a timeout for receive to avoid hanging indefinitely
-            const receiveTimeout = new Promise((_, reject) => {
-              setTimeout(() => reject(new Error('Receive timeout')), 2000);
-            });
-            
-            const readPromise = reader!.readNext();
-            const receivedMsg = await Promise.race([readPromise, receiveTimeout]) as any;
+            // Use readNext with timeout - avoid hasNext() which can cause segfaults
+            const receivedMsg = await reader!.readNext(2000); // 2 second timeout
+            consecutiveTimeouts = 0; // Reset on successful read
             
             const data = receivedMsg.getData();
             
             if (!data || data.length === 0) {
-              consecutiveEmptyReceives++;
-              if (consecutiveEmptyReceives >= MAX_EMPTY_RECEIVES) {
-                console.log(`[PulsarStorage] ${MAX_EMPTY_RECEIVES} consecutive empty messages, stopping replay`);
-                break;
-              }
+              console.log(`[PulsarStorage] Empty message received, continuing`);
               continue;
             }
 
-            consecutiveEmptyReceives = 0; // Reset counter when we get data
             const messageType = data[0];
             const update = data.slice(1);
 
@@ -153,16 +144,12 @@ export class PulsarStorage implements Storage {
             // Ignore awareness messages (messageType === 1) for document restoration
             
           } catch (error: any) {
-            if (error?.message === 'Receive timeout') {
-              // No more messages available
-              console.log(`[PulsarStorage] No more messages available, stopping replay`);
-              break;
-            } else {
-              console.warn(`[PulsarStorage] Error during replay:`, error);
-              break;
-            }
+            consecutiveTimeouts++;
+            console.log(`[PulsarStorage] Read timeout ${consecutiveTimeouts}/${MAX_TIMEOUTS} - no more messages may be available`);
           }
         }
+        
+        console.log(`[PulsarStorage] Finished replay after ${MAX_TIMEOUTS} consecutive timeouts`);
       })();
 
       // Race between replay and timeout
