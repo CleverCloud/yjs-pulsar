@@ -46,11 +46,7 @@ export const getStorage = (): Storage | null => {
 };
 
 export const createPulsarClient = (config: ServerConfig): Pulsar.Client => {
-    console.log('Creating Pulsar client with config:', {
-        serviceUrl: config.pulsarUrl,
-        operationTimeoutSeconds: 120,
-        tokenProvided: !!config.pulsarToken,
-    });
+    // Creating Pulsar client connection
     const clientConfig: Pulsar.ClientConfig = {
         serviceUrl: config.pulsarUrl,
         operationTimeoutSeconds: 120,
@@ -360,8 +356,7 @@ export const onMessage = (conn: ws.WebSocket, doc: YDoc, message: Uint8Array) =>
             return;
         }
         
-        // Debug: uncomment next line if needed
-        // console.log(`[${doc.name}] Processing message: length=${message.length}, bytes=[${Array.from(message.slice(0, 10)).join(', ')}${message.length > 10 ? ', ...' : ''}]`);
+        // Message processing debug logs removed for production
         
         const decoder = decoding.createDecoder(message);
         

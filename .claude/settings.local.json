@@ -42,7 +42,11 @@
       "Bash(pkill:*)",
       "Bash(true)",
       "mcp__playwright__browser_tab_new",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "mcp__playwright__browser_tab_select",
+      "mcp__playwright__browser_type",
+      "mcp__playwright__browser_wait_for",
+      "mcp__playwright__browser_snapshot"
     ],
     "deny": []
   }
