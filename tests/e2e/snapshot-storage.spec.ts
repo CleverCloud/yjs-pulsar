@@ -9,7 +9,9 @@ import * as decoding from 'lib0/decoding';
 // Skip these tests in CI unless we have real Pulsar credentials
 const skipInCI = process.env.CI && !process.env.ADDON_PULSAR_BINARY_URL;
 
-describe.skipIf(skipInCI)('E2E: Snapshot Storage with Pulsar', () => {
+const describeOrSkip = skipInCI ? describe.skip : describe;
+
+describeOrSkip('E2E: Snapshot Storage with Pulsar', () => {
   let server: YjsPulsarServer;
   let config: ServerConfig;
   const TEST_PORT = 34567;

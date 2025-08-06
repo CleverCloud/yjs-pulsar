@@ -48,7 +48,8 @@
       "mcp__playwright__browser_wait_for",
       "mcp__playwright__browser_snapshot",
       "WebFetch(domain:pulsar.apache.org)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(unzip:*)"
     ],
     "deny": []
   }

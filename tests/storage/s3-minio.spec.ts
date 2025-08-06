@@ -4,7 +4,9 @@ import * as Y from 'yjs';
 // Skip if not in CI with MinIO
 const skipIfNoMinIO = !process.env.CI || !process.env.S3_ENDPOINT?.includes('localhost:9000');
 
-describe.skipIf(skipIfNoMinIO)('S3Storage with MinIO', () => {
+const describeOrSkip = skipIfNoMinIO ? describe.skip : describe;
+
+describeOrSkip('S3Storage with MinIO', () => {
   let storage: S3Storage;
   
   beforeAll(() => {
