@@ -125,8 +125,9 @@ connectForm.addEventListener('submit', (e) => {
   const ydoc = new Y.Doc();
   
   // Create provider with proper WebSocket URL
-  // The Vite proxy will forward WebSocket connections to your server
-  provider = new WebsocketProvider(`ws://${location.host}`, docName, ydoc);
+  // Use wss:// for HTTPS pages, ws:// for HTTP pages
+  const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  provider = new WebsocketProvider(`${wsProtocol}//${location.host}`, docName, ydoc);
 
   // Set up provider event listeners
   provider.on('status', ({ status }: { status: string }) => {
