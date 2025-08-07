@@ -111,20 +111,8 @@ jobs:
       run: npm ci
 
 
-    - name: Run E2E tests with real Pulsar (excluding snapshot tests)
-      run: npm run test:e2e -- --testPathIgnorePatterns="snapshot-storage" --forceExit 2>&1 | tee pulsar-e2e-results.log; exit ${PIPESTATUS[0]}
-      env:
-        NODE_ENV: test
-        NODE_OPTIONS: --max-old-space-size=12288
-        ADDON_PULSAR_BINARY_URL: ${{ secrets.ADDON_PULSAR_BINARY_URL }}
-        ADDON_PULSAR_TOKEN: ${{ secrets.ADDON_PULSAR_TOKEN }}
-        ADDON_PULSAR_TENANT: ${{ secrets.ADDON_PULSAR_TENANT }}
-        ADDON_PULSAR_NAMESPACE: ${{ secrets.ADDON_PULSAR_NAMESPACE }}
-        PULSAR_TOPIC_PREFIX: "ci-test-"
-        STORAGE_TYPE: "none"
-
-    - name: Run E2E snapshot storage tests with real Pulsar and Cellar
-      run: npx jest tests/e2e/snapshot-storage.spec.ts --runInBand --forceExit 2>&1 | tee snapshot-e2e-results.log; exit ${PIPESTATUS[0]}
+    - name: Run comprehensive Pulsar E2E integration test
+      run: npx jest tests/e2e/pulsar-e2e.spec.ts --runInBand --forceExit 2>&1 | tee pulsar-e2e-results.log; exit ${PIPESTATUS[0]}
       env:
         NODE_ENV: test
         NODE_OPTIONS: --max-old-space-size=12288
@@ -136,18 +124,16 @@ jobs:
         S3_SECRET_ACCESS_KEY: ${{ secrets.CELLAR_ADDON_KEY_SECRET }}
         S3_ENDPOINT: ${{ secrets.CELLAR_ADDON_HOST }}
         S3_BUCKET: ${{ secrets.CELLAR_ADDON_BUCKET }}
-        PULSAR_TOPIC_PREFIX: "ci-snapshot-test-"
+        PULSAR_TOPIC_PREFIX: "ci-integration-test-"
         STORAGE_TYPE: "pulsar"
-        SNAPSHOT_INTERVAL: "10"
+        SNAPSHOT_INTERVAL: "5"
 
     - name: Upload Pulsar test artifacts
       uses: actions/upload-artifact@v4
       if: always()
       with:
         name: pulsar-test-results
-        path: |
-          pulsar-e2e-results.log
-          snapshot-e2e-results.log
+        path: pulsar-e2e-results.log
         retention-days: 30
 
   build-demo:
