@@ -454,8 +454,14 @@ export const getYDoc = async (docName: string, pulsarClientContainer: PulsarClie
 export const onMessage = (conn: ws.WebSocket, doc: YDoc, message: Uint8Array) => {
     const encoder = encoding.createEncoder();
     try {
-        if (message.length === 0) {
-            console.warn(`[${doc.name}] Received empty message, ignoring`);
+        if (!message || message.length === 0) {
+            console.warn(`[${doc.name}] Received empty or null message, ignoring`);
+            return;
+        }
+        
+        // Validate message is a proper ArrayBuffer/Uint8Array
+        if (!(message instanceof Uint8Array)) {
+            console.warn(`[${doc.name}] Received non-Uint8Array message, ignoring`);
             return;
         }
         
@@ -465,90 +471,170 @@ export const onMessage = (conn: ws.WebSocket, doc: YDoc, message: Uint8Array) =>
             return;
         }
         
-        // Message processing debug logs removed for production
-        
-        const decoder = decoding.createDecoder(message);
-        
-        // Safely read messageType with additional error checking
+        let decoder: decoding.Decoder;
         let messageType: number;
+        
         try {
+            decoder = decoding.createDecoder(message);
             messageType = decoding.readVarUint(decoder);
-        } catch (decodeErr) {
-            console.warn(`[${doc.name}] Failed to decode message type from message of length ${message.length}, ignoring:`, decodeErr);
+        } catch (decodeErr: any) {
+            console.warn(`[${doc.name}] Failed to decode message (length: ${message.length}), ignoring:`, decodeErr?.message || String(decodeErr));
             return; // Just ignore malformed messages, don't close connection
         }
+        
+        // Validate messageType is within expected range
+        if (messageType !== messageSync && messageType !== messageAwareness) {
+            console.warn(`[${doc.name}] Unknown message type: ${messageType}, ignoring`);
+            return;
+        }
+        
         switch (messageType) {
             case messageSync:
                 encoding.writeVarUint(encoder, messageSync);
                 try {
+                    // Check if we have enough data for sync protocol
+                    const remainingBytes = decoding.hasContent(decoder);
+                    if (!remainingBytes) {
+                        console.warn(`[${doc.name}] Sync message has no content, ignoring`);
+                        return;
+                    }
+                    
                     syncProtocol.readSyncMessage(decoder, encoder, doc, conn);
                     if (encoding.length(encoder) > 1) {
                         send(doc, conn, encoding.toUint8Array(encoder));
-                    } else {
-                        // Client is synced
-                        const syncDoneEncoder = encoding.createEncoder();
-                        encoding.writeVarUint(syncDoneEncoder, messageSync);
-                        syncProtocol.writeSyncStep2(syncDoneEncoder, doc, new Uint8Array()); // Empty update
-                        send(doc, conn, encoding.toUint8Array(syncDoneEncoder));
                     }
-                } catch (syncErr) {
-                    console.warn(`[${doc.name}] Error in syncProtocol.readSyncMessage, ignoring message:`, syncErr);
+                } catch (syncErr: any) {
+                    // More specific error handling for sync errors
+                    if (syncErr?.message?.includes('Unexpected end of array')) {
+                        console.warn(`[${doc.name}] Truncated sync message received, ignoring`);
+                    } else {
+                        console.warn(`[${doc.name}] Error in sync protocol:`, syncErr?.message || String(syncErr));
+                    }
                     return; // Just ignore problematic messages, don't close connection
                 }
                 break;
             case messageAwareness:
                 try {
-                    awarenessProtocol.applyAwarenessUpdate(doc.awareness, decoding.readVarUint8Array(decoder), conn);
-                } catch (awarenessErr) {
-                    console.warn(`[${doc.name}] Error in awareness update, ignoring message:`, awarenessErr);
+                    // Check if we have enough data for awareness protocol
+                    const remainingBytes = decoding.hasContent(decoder);
+                    if (!remainingBytes) {
+                        console.warn(`[${doc.name}] Awareness message has no content, ignoring`);
+                        return;
+                    }
+                    
+                    const awarenessData = decoding.readVarUint8Array(decoder);
+                    if (awarenessData.length === 0) {
+                        console.warn(`[${doc.name}] Empty awareness data, ignoring`);
+                        return;
+                    }
+                    
+                    awarenessProtocol.applyAwarenessUpdate(doc.awareness, awarenessData, conn);
+                } catch (awarenessErr: any) {
+                    console.warn(`[${doc.name}] Error in awareness update:`, awarenessErr?.message || String(awarenessErr));
                     return; // Just ignore problematic messages, don't close connection
                 }
                 break;
-            default:
-                console.warn(`[${doc.name}] Unknown message type: ${messageType}`);
         }
     } catch (err) {
-        console.error(`[${doc.name}] Error processing message:`, err);
-        // Don't destroy the document, just close this connection
-        conn.close(1003, 'Invalid message format');
+        console.error(`[${doc.name}] Unexpected error processing message:`, err);
+        // For unexpected errors, close the connection to prevent further issues
+        try {
+            conn.close(1003, 'Protocol error');
+        } catch (closeErr) {
+            // Connection might already be closed
+        }
     }
 };
 
 export const onConnection = (conn: ws.WebSocket, doc: YDoc) => {
-    const encoder = encoding.createEncoder();
-    encoding.writeVarUint(encoder, messageSync);
-    syncProtocol.writeSyncStep1(encoder, doc);
-    send(doc, conn, encoding.toUint8Array(encoder));
-    const awarenessStates = doc.awareness.getStates();
-    if (awarenessStates.size > 0) {
-        const awarenessEncoder = encoding.createEncoder();
-        encoding.writeVarUint(awarenessEncoder, messageAwareness);
-        encoding.writeVarUint8Array(awarenessEncoder, awarenessProtocol.encodeAwarenessUpdate(doc.awareness, Array.from(awarenessStates.keys())));
-        send(doc, conn, encoding.toUint8Array(awarenessEncoder));
+    try {
+        const encoder = encoding.createEncoder();
+        encoding.writeVarUint(encoder, messageSync);
+        syncProtocol.writeSyncStep1(encoder, doc);
+        send(doc, conn, encoding.toUint8Array(encoder));
+        
+        const awarenessStates = doc.awareness.getStates();
+        if (awarenessStates.size > 0) {
+            const awarenessEncoder = encoding.createEncoder();
+            encoding.writeVarUint(awarenessEncoder, messageAwareness);
+            encoding.writeVarUint8Array(awarenessEncoder, awarenessProtocol.encodeAwarenessUpdate(doc.awareness, Array.from(awarenessStates.keys())));
+            send(doc, conn, encoding.toUint8Array(awarenessEncoder));
+        }
+    } catch (err) {
+        console.error(`[${doc.name}] Error during connection setup:`, err);
+        try {
+            conn.close(1011, 'Internal server error');
+        } catch (closeErr) {
+            // Connection might already be closed
+        }
     }
 };
 
 export const setupWSConnection = async (conn: ws.WebSocket, req: http.IncomingMessage, { pulsarClientContainer, pulsarConfig }: { pulsarClientContainer: PulsarClientContainer, pulsarConfig: ServerConfig }) => {
-    const url = new URL(req.url!, `http://${req.headers.host}`);
-    const docName = url.searchParams.get('doc') || req.url!.slice(1).split('?')[0];
-
+    let docName = 'unknown';
+    let pingInterval: NodeJS.Timeout | null = null;
+    
     try {
+        const url = new URL(req.url!, `http://${req.headers.host}`);
+        docName = url.searchParams.get('doc') || req.url!.slice(1).split('?')[0];
+
+        if (!docName || docName === '/') {
+            throw new Error('Invalid document name');
+        }
+
         const doc = await getYDoc(docName, pulsarClientContainer, pulsarConfig);
         doc.conns.set(conn, new Set());
 
         conn.binaryType = 'arraybuffer';
-        conn.on('message', (message: ArrayBuffer) => onMessage(conn, doc, new Uint8Array(message)));
+        
+        // Add error handler first
+        conn.on('error', (error) => {
+            console.warn(`[${docName}] WebSocket error:`, error.message);
+            onClose(conn, doc);
+        });
 
-        conn.on('close', () => onClose(conn, doc));
+        conn.on('message', (message: ArrayBuffer) => {
+            try {
+                if (message && message.byteLength > 0) {
+                    onMessage(conn, doc, new Uint8Array(message));
+                }
+            } catch (err) {
+                console.warn(`[${docName}] Error handling message:`, err);
+            }
+        });
+
+        conn.on('close', () => {
+            if (pingInterval) {
+                clearInterval(pingInterval);
+                pingInterval = null;
+            }
+            onClose(conn, doc);
+        });
 
         let pongReceived = true;
-        const pingInterval = setInterval(() => {
+        pingInterval = setInterval(() => {
             if (!pongReceived) {
-                conn.terminate();
-                clearInterval(pingInterval);
+                if (pingInterval) {
+                    clearInterval(pingInterval);
+                    pingInterval = null;
+                }
+                try {
+                    conn.terminate();
+                } catch (err) {
+                    // Connection might already be closed
+                }
+                return;
             }
             pongReceived = false;
-            conn.ping();
+            try {
+                conn.ping();
+            } catch (err) {
+                // Connection might be closed
+                if (pingInterval) {
+                    clearInterval(pingInterval);
+                    pingInterval = null;
+                }
+            }
         }, pingTimeout);
 
         conn.on('pong', () => {
@@ -557,7 +643,14 @@ export const setupWSConnection = async (conn: ws.WebSocket, req: http.IncomingMe
 
         onConnection(conn, doc);
     } catch (err) {
-        console.error(`[${docName}] Error setting up connection`, err);
-        conn.close(1011, 'Internal Server Error');
+        console.error(`[${docName}] Error setting up connection:`, err);
+        if (pingInterval) {
+            clearInterval(pingInterval);
+        }
+        try {
+            conn.close(1011, 'Internal Server Error');
+        } catch (closeErr) {
+            // Connection might already be closed
+        }
     }
 };
