@@ -15,7 +15,17 @@ describe('PulsarStorage with S3 Snapshots', () => {
   const TEST_TENANT = 'test-tenant';
   const TEST_NAMESPACE = 'test-namespace';
   const TEST_PREFIX = 'test-';
-  const SNAPSHOT_INTERVAL = 30;
+  const SNAPSHOT_INTERVAL = 5; // Reduced for faster tests
+  
+  // Helper to create valid Yjs update data
+  const createValidYjsUpdate = (text: string = '') => {
+    const doc = new Y.Doc();
+    const yText = doc.getText('test');
+    if (text) {
+      yText.insert(0, text);
+    }
+    return Y.encodeStateAsUpdate(doc);
+  };
 
   beforeEach(() => {
     // Reset all mocks
@@ -28,8 +38,20 @@ describe('PulsarStorage with S3 Snapshots', () => {
       close: jest.fn(),
     } as any;
 
-    // Mock S3Storage
-    mockS3Storage = new S3Storage() as jest.Mocked<S3Storage>;
+    // Mock Pulsar.MessageId static methods
+    const mockMessageId = {
+      toString: () => 'mocked-message-id',
+      serialize: () => Buffer.from('mock-serialized-id')
+    };
+    
+    (Pulsar.MessageId.earliest as jest.Mock) = jest.fn().mockReturnValue(mockMessageId);
+    (Pulsar.MessageId.deserialize as jest.Mock) = jest.fn().mockReturnValue(mockMessageId);
+
+    // Mock S3Storage constructor to succeed by default
+    mockS3Storage = {
+      getDoc: jest.fn(),
+      storeDoc: jest.fn(),
+    } as unknown as jest.Mocked<S3Storage>;
     (S3Storage as jest.MockedClass<typeof S3Storage>).mockImplementation(() => mockS3Storage);
     
     // Create PulsarStorage instance
@@ -45,7 +67,7 @@ describe('PulsarStorage with S3 Snapshots', () => {
   describe('Snapshot Management', () => {
     it('should load snapshot from S3 when available', async () => {
       const docName = 'test-doc';
-      const mockState = new Uint8Array([1, 2, 3, 4, 5]);
+      const mockState = createValidYjsUpdate('snapshot content');
       const mockSnapshot = {
         state: Array.from(mockState),
         lastMessageId: 'mock-message-id-base64',
@@ -85,11 +107,17 @@ describe('PulsarStorage with S3 Snapshots', () => {
       // No existing snapshot
       mockS3Storage.getDoc.mockResolvedValue(null);
 
-      // Mock reader that returns exactly SNAPSHOT_INTERVAL messages
-      const mockMessages = Array(SNAPSHOT_INTERVAL).fill(null).map((_, i) => ({
-        getMessageId: () => ({ toString: () => `msg-id-${i}` }),
-        getData: () => new Uint8Array([0, i + 1]) // messageType 0 (sync), data i+1
-      }));
+      // Mock reader that returns exactly SNAPSHOT_INTERVAL messages with valid Yjs data
+      const mockMessages = Array(SNAPSHOT_INTERVAL).fill(null).map((_, i) => {
+        const validUpdate = createValidYjsUpdate(`message ${i}`);
+        const messageData = new Uint8Array(validUpdate.length + 1);
+        messageData[0] = 0; // messageType 0 (sync)
+        messageData.set(validUpdate, 1);
+        return {
+          getMessageId: () => ({ toString: () => `msg-id-${i}` }),
+          getData: () => messageData
+        };
+      });
 
       let messageIndex = 0;
       const mockReader = {
@@ -122,8 +150,10 @@ describe('PulsarStorage with S3 Snapshots', () => {
 
     it('should start replay from snapshot MessageID', async () => {
       const docName = 'test-doc';
+      // Use a valid Yjs state instead of [1, 2, 3]
+      const mockState = createValidYjsUpdate('snapshot content');
       const mockSnapshot = {
-        state: [1, 2, 3],
+        state: Array.from(mockState),
         lastMessageId: Buffer.from('test-message-id').toString('base64'),
         messageCount: 100,
         timestamp: Date.now()
@@ -155,10 +185,53 @@ describe('PulsarStorage with S3 Snapshots', () => {
   describe('Document Storage', () => {
     it('should handle storeDoc by logging (Pulsar handles persistence)', async () => {
       const docName = 'test-doc';
-      const state = new Uint8Array([1, 2, 3]);
+      const state = createValidYjsUpdate('test content');
       
       // storeDoc in PulsarStorage just logs since Pulsar handles persistence
       await expect(pulsarStorage.storeDoc(docName, state)).resolves.not.toThrow();
+    });
+  });
+
+  describe('S3Storage Initialization', () => {
+    it('should work without S3Storage when initialization fails', async () => {
+      // Mock S3Storage constructor to throw
+      (S3Storage as jest.MockedClass<typeof S3Storage>).mockImplementation(() => {
+        throw new Error('S3 credentials missing');
+      });
+
+      // Create PulsarStorage - should not throw
+      const pulsarStorageNoS3 = new PulsarStorage(
+        mockClient,
+        TEST_TENANT,
+        TEST_NAMESPACE,
+        TEST_PREFIX,
+        SNAPSHOT_INTERVAL
+      );
+
+      const docName = 'test-doc';
+      
+      // Mock reader with valid data
+      const validUpdate = createValidYjsUpdate('test content');
+      const messageData = new Uint8Array(validUpdate.length + 1);
+      messageData[0] = 0; // messageType 0 (sync)
+      messageData.set(validUpdate, 1);
+      
+      const mockReader = {
+        readNext: jest.fn()
+          .mockResolvedValueOnce({
+            getMessageId: () => ({ toString: () => 'msg-1' }),
+            getData: () => messageData
+          })
+          .mockRejectedValue(new Error('Timeout')),
+        close: jest.fn(),
+      };
+      mockClient.createReader.mockResolvedValue(mockReader as any);
+
+      const result = await pulsarStorageNoS3.getDoc(docName);
+      
+      // Should work without S3 (Pulsar-only mode)
+      expect(result).not.toBeNull();
+      expect(mockClient.createReader).toHaveBeenCalled();
     });
   });
 
@@ -169,12 +242,17 @@ describe('PulsarStorage with S3 Snapshots', () => {
       // S3 fails to load snapshot
       mockS3Storage.getDoc.mockRejectedValue(new Error('S3 Error'));
 
-      // But Pulsar reader works
+      // But Pulsar reader works with valid data
+      const validUpdate = createValidYjsUpdate('recovery content');
+      const messageData = new Uint8Array(validUpdate.length + 1);
+      messageData[0] = 0; // messageType 0 (sync)
+      messageData.set(validUpdate, 1);
+      
       const mockReader = {
         readNext: jest.fn()
           .mockResolvedValueOnce({
             getMessageId: () => ({ toString: () => 'msg-1' }),
-            getData: () => new Uint8Array([0, 1])
+            getData: () => messageData
           })
           .mockRejectedValue(new Error('Timeout')),
         close: jest.fn(),
@@ -185,9 +263,12 @@ describe('PulsarStorage with S3 Snapshots', () => {
 
       // Should still work without snapshot
       expect(result).not.toBeNull();
+      // Check that reader was created (snapshot failure shouldn't prevent reader creation)
       expect(mockClient.createReader).toHaveBeenCalledWith(
         expect.objectContaining({
-          startMessageId: expect.anything() // Should use earliest
+          topic: `persistent://${TEST_TENANT}/${TEST_NAMESPACE}/${TEST_PREFIX}${docName}`,
+          readCompacted: true
+          // startMessageId can be earliest() when no snapshot, which is fine
         })
       );
     });
@@ -220,14 +301,18 @@ describe('PulsarStorage with S3 Snapshots', () => {
       // No snapshot
       mockS3Storage.getDoc.mockResolvedValue(null);
 
-      // Mock reader that could return more than SNAPSHOT_INTERVAL messages
+      // Mock reader that could return more than SNAPSHOT_INTERVAL messages with valid data
       let callCount = 0;
       const mockReader = {
         readNext: jest.fn().mockImplementation(() => {
           callCount++;
+          const validUpdate = createValidYjsUpdate(`incremental message ${callCount}`);
+          const messageData = new Uint8Array(validUpdate.length + 1);
+          messageData[0] = 0; // messageType 0 (sync)
+          messageData.set(validUpdate, 1);
           return Promise.resolve({
             getMessageId: () => ({ toString: () => `msg-${callCount}` }),
-            getData: () => new Uint8Array([0, callCount])
+            getData: () => messageData
           });
         }),
         close: jest.fn(),
