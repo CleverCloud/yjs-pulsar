@@ -85,9 +85,9 @@ const getFullTopicName = (config: ServerConfig, docName: string) => {
 };
 
 const checkPulsarConnection = async (client: Pulsar.Client, config: ServerConfig): Promise<boolean> => {
-    // Skip health check in CI environment if we're just starting up
+    // Skip health check in test environment - it causes connection issues
     // The actual producer creation will happen when needed
-    if (process.env.CI && process.env.NODE_ENV === 'test') {
+    if (process.env.NODE_ENV === 'test') {
         // Just check if client exists
         return client !== null && client !== undefined;
     }

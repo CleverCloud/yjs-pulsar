@@ -6,10 +6,8 @@ import * as syncProtocol from 'y-protocols/sync';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 
-// Skip in CI - too unstable
-const describeOrSkip = process.env.CI ? describe.skip : describe;
-
-describeOrSkip('E2E: Snapshot Storage with Pulsar', () => {
+// Always run tests
+describe('E2E: Snapshot Storage with Pulsar', () => {
   let server: YjsPulsarServer;
   let config: ServerConfig;
   const TEST_PORT = 34567;
