@@ -124,63 +124,63 @@ clever deploy
 
 ## Running Tests
 
-Le projet inclut des tests unitaires (avec Pulsar mocké), des tests E2E et des outils de test manuel pour une validation complète.
+The project includes unit tests (with mocked Pulsar), E2E tests, and manual testing tools for comprehensive validation.
 
-### Tests Automatisés
+### Automated Tests
 
 ```bash
-# Tous les tests unitaires
+# All unit tests
 npm test
 
-# Tests E2E (nécessite .env configuré)
+# E2E tests (requires configured .env)
 npm run test:e2e
 
-# Tests complets
+# Complete test suite
 npm test && npm run test:e2e
 ```
 
-### Tests Manuels Utilisateur
+### Manual User Testing
 
-Le projet fournit plusieurs outils pour tester manuellement :
+The project provides several tools for manual testing:
 
 ```bash
-# 1. Test WebSocket simple
+# 1. Simple WebSocket test
 npm run dev
 node manual-test.js
 
-# 2. Interface de test basique  
+# 2. Basic test interface  
 npm run dev
 open test-collaboration.html
 
-# 3. Demo collaborative complète
+# 3. Complete collaborative demo
 npm run dev & npm run demo
 ```
 
-**📖 Guide détaillé :** Voir [TESTING.md](./TESTING.md) pour toutes les instructions de test.
+**📖 Detailed guide:** See [TESTING.md](./TESTING.md) for all testing instructions.
 
-### Résultats des Tests
+### Test Results
 
-- ✅ **Tests unitaires** : 8/8 passent rapidement
-- ✅ **Connexion E2E** : Fonctionne avec Pulsar réel  
-- ✅ **Plus de tests qui hangent** : Tous se terminent avec des timeouts appropriés
-- ⚠️ **Collaboration complexe** : Peut timeout (comportement normal)
+- ✅ **Unit tests**: 8/8 pass quickly
+- ✅ **E2E connection**: Works with real Pulsar  
+- ✅ **No more hanging tests**: All terminate with appropriate timeouts
+- ⚠️ **Complex collaboration**: May timeout (normal behavior)
 
-**Note:** Les tests E2E nécessitent un `ADDON_PULSAR_TOKEN` valide dans `.env`.
+**Note:** E2E tests require a valid `ADDON_PULSAR_TOKEN` in `.env`.
 
-## État du Build CI/CD
+## CI/CD Build Status
 
 🔄 **GitHub Actions:** [![CI Status](https://github.com/CleverCloud/yjs-pulsar/actions/workflows/ci.yml/badge.svg)](https://github.com/CleverCloud/yjs-pulsar/actions/workflows/ci.yml)
 
-### Statut Actuel (Dernière mise à jour: 2025-01-07)
+### Current Status (Last updated: 2025-01-07)
 
-- ✅ **Tests locaux** : Tous les tests E2E de base passent
-- ✅ **Protocol WebSocket** : Corrigé - plus de crashes sur messages malformés
-- ✅ **Timeouts** : Optimisés - plus de hangs infinis
-- ⚠️ **CI GitHub Actions** : Quelques problèmes de mémoire sur les tests de storage
-- 🔧 **Work in Progress** : Optimisation des tests de storage pour l'environnement CI
+- ✅ **Local tests**: All basic E2E tests pass
+- ✅ **WebSocket protocol**: Fixed - no more crashes on malformed messages
+- ✅ **Timeouts**: Optimized - no more infinite hangs
+- ⚠️ **GitHub Actions CI**: Some memory issues on storage tests
+- 🔧 **Work in Progress**: Storage test optimization for CI environment
 
-**Problèmes connus en CI :**
-- Tests de storage peuvent dépasser la limite de mémoire (12GB alloués)
-- Tests de snapshot peuvent crasher avec "Bus error" sur certaines configurations CI
+**Known CI issues:**
+- Storage tests may exceed memory limits (12GB allocated)
+- Snapshot tests may crash with "Bus error" on some CI configurations
 
-**En local :** Tous les tests fonctionnent correctement avec des credentials Pulsar valides.
+**Locally:** All tests work correctly with valid Pulsar credentials.
