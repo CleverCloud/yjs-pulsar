@@ -48,8 +48,15 @@ export const startServer = async (config: ServerConfig): Promise<YjsPulsarServer
     const stop = async () => {
         await cleanupManager.waitForAll();
         await new Promise(resolve => wss.close(resolve));
-        if (!config.pulsarClient) {
-            await pulsarClientContainer.client.close();
+        if (!config.pulsarClient && pulsarClientContainer.client) {
+            try {
+                await pulsarClientContainer.client.close();
+            } catch (e: any) {
+                // Ignore AlreadyClosed errors during shutdown
+                if (!e.message?.includes('AlreadyClosed')) {
+                    console.error('Error closing Pulsar client during shutdown:', e);
+                }
+            }
         }
         await new Promise(resolve => httpServer.close(resolve));
     };

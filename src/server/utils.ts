@@ -225,12 +225,21 @@ export class YDoc extends Y.Doc {
             }
         }
 
-        const closeProducer = this.producer ? this.producer.close() : Promise.resolve();
-        const closeConsumer = this.consumer ? this.consumer.close() : Promise.resolve();
+        const closeProducer = this.producer ? this.producer.close().catch(err => {
+            // Ignore AlreadyClosed errors
+            if (!err.message?.includes('AlreadyClosed')) {
+                console.error(`[${this.name}] Error closing producer:`, err);
+            }
+        }) : Promise.resolve();
+        
+        const closeConsumer = this.consumer ? this.consumer.close().catch(err => {
+            // Ignore AlreadyClosed errors
+            if (!err.message?.includes('AlreadyClosed')) {
+                console.error(`[${this.name}] Error closing consumer:`, err);
+            }
+        }) : Promise.resolve();
 
-        await Promise.all([closeProducer, closeConsumer]).catch(err => {
-            console.error(`[${this.name}] Error closing Pulsar resources`, err);
-        });
+        await Promise.all([closeProducer, closeConsumer]);
 
         super.destroy();
         docs.delete(this.name);
@@ -248,8 +257,11 @@ const reconnectPulsarClient = async (pulsarClientContainer: PulsarClientContaine
         if (pulsarClientContainer.client) {
             try {
                 await pulsarClientContainer.client.close();
-            } catch (e) {
-                console.error('Failed to close stale Pulsar client', e);
+            } catch (e: any) {
+                // Only log non-AlreadyClosed errors
+                if (!e.message?.includes('AlreadyClosed')) {
+                    console.error('Failed to close stale Pulsar client', e);
+                }
             }
         }
         pulsarClientContainer.client = createPulsarClient(pulsarConfig);

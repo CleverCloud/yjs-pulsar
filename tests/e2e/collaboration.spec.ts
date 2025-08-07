@@ -110,7 +110,14 @@ describe('Yjs Pulsar E2E Collaboration', () => {
 
     afterAll(async () => {
       if (serverInstance) {
-        await serverInstance.stop();
+        try {
+          await serverInstance.stop();
+        } catch (error: any) {
+          // Ignore AlreadyClosed errors during test cleanup
+          if (!error.message?.includes('AlreadyClosed')) {
+            console.error('Error stopping server in test cleanup:', error);
+          }
+        }
       }
       resetStorage();
     });

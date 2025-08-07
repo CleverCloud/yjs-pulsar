@@ -32,7 +32,14 @@ describe('E2E: Snapshot Storage with Pulsar', () => {
 
   afterAll(async () => {
     if (server) {
-      await server.stop();
+      try {
+        await server.stop();
+      } catch (error: any) {
+        // Ignore AlreadyClosed errors during test cleanup
+        if (!error.message?.includes('AlreadyClosed')) {
+          console.error('Error stopping server in test cleanup:', error);
+        }
+      }
     }
     // Clean up env vars
     delete process.env.STORAGE_TYPE;

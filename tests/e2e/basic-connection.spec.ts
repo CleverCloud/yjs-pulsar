@@ -41,7 +41,14 @@ describe('Basic Connection E2E', () => {
 
     afterAll(async () => {
       if (serverInstance) {
-        await serverInstance.stop();
+        try {
+          await serverInstance.stop();
+        } catch (error: any) {
+          // Ignore AlreadyClosed errors during test cleanup
+          if (!error.message?.includes('AlreadyClosed')) {
+            console.error('Error stopping server in test cleanup:', error);
+          }
+        }
       }
       resetStorage();
     });
@@ -49,24 +56,32 @@ describe('Basic Connection E2E', () => {
     test('should establish WebSocket connection', async () => {
       const ws = new WebSocket(`ws://localhost:${port}/${docName}`);
       
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('Connection timeout'));
-        }, 10000);
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Connection timeout'));
+          }, 10000);
 
-        ws.on('open', () => {
-          clearTimeout(timeout);
-          resolve();
+          ws.on('open', () => {
+            clearTimeout(timeout);
+            resolve();
+          });
+
+          ws.on('error', (error) => {
+            clearTimeout(timeout);
+            reject(error);
+          });
         });
 
-        ws.on('error', (error) => {
-          clearTimeout(timeout);
-          reject(error);
-        });
-      });
-
-      expect(ws.readyState).toBe(WebSocket.OPEN);
-      ws.close();
+        expect(ws.readyState).toBe(WebSocket.OPEN);
+      } finally {
+        // Always close the WebSocket, ignore errors
+        try {
+          ws.close();
+        } catch (error) {
+          // Ignore close errors
+        }
+      }
     }, 15000);
 
     test('should receive initial sync message', async () => {
@@ -74,30 +89,38 @@ describe('Basic Connection E2E', () => {
       
       const messages: Buffer[] = [];
       
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('Message timeout'));
-        }, 10000);
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Message timeout'));
+          }, 10000);
 
-        ws.on('open', () => {
-          console.log('WebSocket opened');
+          ws.on('open', () => {
+            console.log('WebSocket opened');
+          });
+
+          ws.on('message', (data: Buffer) => {
+            console.log('Received message:', data.length, 'bytes');
+            messages.push(data);
+            clearTimeout(timeout);
+            resolve();
+          });
+
+          ws.on('error', (error) => {
+            clearTimeout(timeout);
+            reject(error);
+          });
         });
 
-        ws.on('message', (data: Buffer) => {
-          console.log('Received message:', data.length, 'bytes');
-          messages.push(data);
-          clearTimeout(timeout);
-          resolve();
-        });
-
-        ws.on('error', (error) => {
-          clearTimeout(timeout);
-          reject(error);
-        });
-      });
-
-      expect(messages.length).toBeGreaterThan(0);
-      ws.close();
+        expect(messages.length).toBeGreaterThan(0);
+      } finally {
+        // Always close the WebSocket, ignore errors
+        try {
+          ws.close();
+        } catch (error) {
+          // Ignore close errors
+        }
+      }
     }, 15000);
   });
 });
