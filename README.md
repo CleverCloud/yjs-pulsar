@@ -166,3 +166,21 @@ npm run dev & npm run demo
 - ⚠️ **Collaboration complexe** : Peut timeout (comportement normal)
 
 **Note:** Les tests E2E nécessitent un `ADDON_PULSAR_TOKEN` valide dans `.env`.
+
+## État du Build CI/CD
+
+🔄 **GitHub Actions:** [![CI Status](https://github.com/CleverCloud/yjs-pulsar/actions/workflows/ci.yml/badge.svg)](https://github.com/CleverCloud/yjs-pulsar/actions/workflows/ci.yml)
+
+### Statut Actuel (Dernière mise à jour: 2025-01-07)
+
+- ✅ **Tests locaux** : Tous les tests E2E de base passent
+- ✅ **Protocol WebSocket** : Corrigé - plus de crashes sur messages malformés
+- ✅ **Timeouts** : Optimisés - plus de hangs infinis
+- ⚠️ **CI GitHub Actions** : Quelques problèmes de mémoire sur les tests de storage
+- 🔧 **Work in Progress** : Optimisation des tests de storage pour l'environnement CI
+
+**Problèmes connus en CI :**
+- Tests de storage peuvent dépasser la limite de mémoire (12GB alloués)
+- Tests de snapshot peuvent crasher avec "Bus error" sur certaines configurations CI
+
+**En local :** Tous les tests fonctionnent correctement avec des credentials Pulsar valides.
