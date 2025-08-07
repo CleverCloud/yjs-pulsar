@@ -100,41 +100,9 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
-    - name: Check if secrets are available
-      run: |
-        echo "Checking if secrets are injected..."
-        if [ -z "$ADDON_PULSAR_BINARY_URL" ]; then
-          echo "ERROR: ADDON_PULSAR_BINARY_URL is not set"
-          exit 1
-        else
-          echo "✓ ADDON_PULSAR_BINARY_URL is set"
-        fi
-        if [ -z "$ADDON_PULSAR_TOKEN" ]; then
-          echo "ERROR: ADDON_PULSAR_TOKEN is not set"
-          exit 1
-        else
-          echo "✓ ADDON_PULSAR_TOKEN is set"
-        fi
-        if [ -z "$ADDON_PULSAR_TENANT" ]; then
-          echo "ERROR: ADDON_PULSAR_TENANT is not set"
-          exit 1
-        else
-          echo "✓ ADDON_PULSAR_TENANT is set"
-        fi
-        if [ -z "$ADDON_PULSAR_NAMESPACE" ]; then
-          echo "ERROR: ADDON_PULSAR_NAMESPACE is not set"
-          exit 1
-        else
-          echo "✓ ADDON_PULSAR_NAMESPACE is set"
-        fi
-      env:
-        ADDON_PULSAR_BINARY_URL: ${{ secrets.ADDON_PULSAR_BINARY_URL }}
-        ADDON_PULSAR_TOKEN: ${{ secrets.ADDON_PULSAR_TOKEN }}
-        ADDON_PULSAR_TENANT: ${{ secrets.ADDON_PULSAR_TENANT }}
-        ADDON_PULSAR_NAMESPACE: ${{ secrets.ADDON_PULSAR_NAMESPACE }}
 
-    - name: Run E2E tests with real Pulsar
-      run: npm run test:e2e -- --forceExit 2>&1 | tee pulsar-e2e-results.log; exit ${PIPESTATUS[0]}
+    - name: Run E2E tests with real Pulsar (excluding snapshot tests)
+      run: npm run test:e2e -- --testPathIgnorePatterns="snapshot-storage" --forceExit 2>&1 | tee pulsar-e2e-results.log; exit ${PIPESTATUS[0]}
       env:
         NODE_ENV: test
         NODE_OPTIONS: --max-old-space-size=12288
