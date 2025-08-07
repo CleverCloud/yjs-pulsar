@@ -57,7 +57,8 @@ describe('Basic Connection E2E', () => {
     }, 30000); // Increase timeout for cleanup
 
     test('should establish WebSocket connection', async () => {
-      const ws = new WebSocket(`ws://localhost:${port}/${docName}`);
+      const testDocName = `${docName}-conn-${Date.now()}`;
+      const ws = new WebSocket(`ws://localhost:${port}/${testDocName}`);
       
       try {
         await new Promise<void>((resolve, reject) => {
@@ -95,7 +96,8 @@ describe('Basic Connection E2E', () => {
     }, 15000);
 
     test('should receive initial sync message', async () => {
-      const ws = new WebSocket(`ws://localhost:${port}/${docName}`);
+      const testDocName = `${docName}-sync-${Date.now()}`;
+      const ws = new WebSocket(`ws://localhost:${port}/${testDocName}`);
       
       const messages: Buffer[] = [];
       
