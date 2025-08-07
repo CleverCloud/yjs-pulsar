@@ -46,8 +46,18 @@ export const startServer = async (config: ServerConfig): Promise<YjsPulsarServer
     });
 
     const stop = async () => {
-        await cleanupManager.waitForAll();
-        await new Promise(resolve => wss.close(resolve));
+        try {
+            await cleanupManager.waitForAll();
+        } catch (e: any) {
+            console.error('Error during cleanup wait:', e);
+        }
+        
+        try {
+            await new Promise(resolve => wss.close(resolve));
+        } catch (e: any) {
+            console.error('Error closing WebSocket server:', e);
+        }
+        
         if (!config.pulsarClient && pulsarClientContainer.client) {
             try {
                 await pulsarClientContainer.client.close();
@@ -58,7 +68,12 @@ export const startServer = async (config: ServerConfig): Promise<YjsPulsarServer
                 }
             }
         }
-        await new Promise(resolve => httpServer.close(resolve));
+        
+        try {
+            await new Promise(resolve => httpServer.close(resolve));
+        } catch (e: any) {
+            console.error('Error closing HTTP server:', e);
+        }
     };
 
     await new Promise<void>(resolve => httpServer.listen({ port: config.port }, resolve));
