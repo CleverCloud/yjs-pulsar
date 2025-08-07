@@ -10,13 +10,19 @@ export class S3Storage implements Storage {
     if (!process.env.S3_BUCKET || !process.env.S3_ENDPOINT) {
       throw new Error('S3_BUCKET and S3_ENDPOINT must be defined in environment variables');
     }
+    
+    // Validate credentials are provided
+    if (!process.env.S3_ACCESS_KEY_ID || !process.env.S3_SECRET_ACCESS_KEY) {
+      throw new Error('S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be defined in environment variables');
+    }
+    
     this.s3 = new S3Client({
       endpoint: process.env.S3_ENDPOINT,
       forcePathStyle: true,
       region: process.env.AWS_REGION || 'us-east-1',
       credentials: {
-        accessKeyId: process.env.S3_ACCESS_KEY_ID || '',
-        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
+        accessKeyId: process.env.S3_ACCESS_KEY_ID,
+        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
       },
     });
     this.bucket = process.env.S3_BUCKET;
@@ -53,9 +59,24 @@ export class S3Storage implements Storage {
       }
       return null;
     } catch (error: any) {
-      if (error.name === 'NoSuchKey') {
+      // Handle common S3 errors gracefully
+      if (error.name === 'NoSuchKey' || 
+          error.Code === 'NoSuchKey' ||
+          error.$metadata?.httpStatusCode === 404) {
         return null;
       }
+      
+      // Handle invalid credentials or access errors
+      if (error.Code === 'InvalidAccessKeyId' ||
+          error.Code === 'SignatureDoesNotMatch' ||
+          error.Code === 'AccessDenied' ||
+          error.$metadata?.httpStatusCode === 403) {
+        console.error(`[S3Storage] Access denied to S3: ${error.Code || error.message}`);
+        return null;
+      }
+      
+      // For any other error, log and re-throw
+      console.error(`[S3Storage] Unexpected S3 error:`, error);
       throw error;
     }
   }

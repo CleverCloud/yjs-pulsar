@@ -22,7 +22,7 @@ export class PulsarStorage implements Storage {
   private tenant: string;
   private namespace: string;
   private topicPrefix: string;
-  private s3Storage: S3Storage;
+  private s3Storage: S3Storage | null;
   private snapshotInterval: number; // Messages between snapshots
 
   constructor(
@@ -36,8 +36,17 @@ export class PulsarStorage implements Storage {
     this.tenant = tenant;
     this.namespace = namespace;
     this.topicPrefix = topicPrefix;
-    this.s3Storage = new S3Storage();
     this.snapshotInterval = snapshotInterval;
+    
+    // Try to initialize S3Storage, fallback gracefully if it fails
+    try {
+      this.s3Storage = new S3Storage();
+      console.log(`[PulsarStorage] S3 storage initialized for snapshots`);
+    } catch (error: any) {
+      console.warn(`[PulsarStorage] S3 storage initialization failed: ${error.message || error}`);
+      console.warn(`[PulsarStorage] Running without snapshot support - only Pulsar message history available`);
+      this.s3Storage = null;
+    }
   }
 
   private getTopicName(documentName: string): string {
@@ -52,6 +61,11 @@ export class PulsarStorage implements Storage {
    * Load the latest snapshot for a document from S3
    */
   private async loadSnapshot(documentName: string): Promise<DocumentSnapshot | null> {
+    if (!this.s3Storage) {
+      console.log(`[PulsarStorage] S3 storage not available, no snapshot support`);
+      return null;
+    }
+    
     try {
       const snapshotKey = this.getSnapshotKey(documentName);
       const snapshotData = await this.s3Storage.getDoc(snapshotKey);
@@ -77,6 +91,11 @@ export class PulsarStorage implements Storage {
    * Save a snapshot of the document state to S3 with Pulsar MessageID checkpoint
    */
   private async saveSnapshot(documentName: string, state: Uint8Array, lastMessageId: Pulsar.MessageId, messageCount: number): Promise<void> {
+    if (!this.s3Storage) {
+      console.log(`[PulsarStorage] S3 storage not available, skipping snapshot save`);
+      return;
+    }
+    
     try {
       const snapshot: DocumentSnapshot = {
         state: Array.from(state), // Convert Uint8Array to regular array for JSON
