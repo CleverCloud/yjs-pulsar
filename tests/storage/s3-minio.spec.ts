@@ -1,10 +1,11 @@
 import { S3Storage } from '../../src/storage/s3';
 import * as Y from 'yjs';
 
-// Skip if not in CI with MinIO
-const skipIfNoMinIO = !process.env.CI || !process.env.S3_ENDPOINT?.includes('localhost:9000');
+// Skip if MinIO is not available (not in CI or no MinIO endpoint configured)
+const hasMinIOConfig = process.env.S3_ENDPOINT?.includes('localhost:9000') && 
+                      process.env.S3_ACCESS_KEY_ID === 'minioadmin';
 
-const describeOrSkip = skipIfNoMinIO ? describe.skip : describe;
+const describeOrSkip = hasMinIOConfig ? describe : describe.skip;
 
 describeOrSkip('S3Storage with MinIO', () => {
   let storage: S3Storage;

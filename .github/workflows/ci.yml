@@ -37,19 +37,29 @@ jobs:
         NODE_ENV: test
         NODE_OPTIONS: --max-old-space-size=12288
 
-    - name: Run unit tests - Storage modules
-      run: npx jest tests/storage/ --runInBand --forceExit 2>&1 | tee test-results-storage.log; exit ${PIPESTATUS[0]}
-      env:
-        NODE_ENV: test
-        NODE_OPTIONS: --max-old-space-size=12288
-
-    - name: Start MinIO for snapshot tests
+    - name: Start MinIO for storage tests
       run: |
         docker run -d -p 9000:9000 --name minio-unit-tests \
           -e "MINIO_ROOT_USER=minioadmin" \
           -e "MINIO_ROOT_PASSWORD=minioadmin" \
           minio/minio server /data
-        sleep 3
+        sleep 5
+        
+        # Install MinIO client and create bucket
+        wget -q https://dl.min.io/client/mc/release/linux-amd64/mc
+        chmod +x mc
+        ./mc alias set myminio http://localhost:9000 minioadmin minioadmin
+        ./mc mb myminio/test-bucket || true
+
+    - name: Run unit tests - Storage modules
+      run: npx jest tests/storage/ --runInBand --forceExit 2>&1 | tee test-results-storage.log; exit ${PIPESTATUS[0]}
+      env:
+        NODE_ENV: test
+        NODE_OPTIONS: --max-old-space-size=12288
+        S3_ACCESS_KEY_ID: minioadmin
+        S3_SECRET_ACCESS_KEY: minioadmin
+        S3_ENDPOINT: http://localhost:9000
+        S3_BUCKET: test-bucket
 
     - name: Run snapshot storage tests
       run: npx jest tests/storage/pulsar-storage.spec.ts tests/storage/snapshot-format.spec.ts --runInBand --forceExit 2>&1 | tee snapshot-test-results.log; exit ${PIPESTATUS[0]}
