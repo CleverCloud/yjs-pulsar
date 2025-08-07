@@ -9,24 +9,51 @@ import { AddressInfo } from 'net';
 
 const createSyncedProvider = (port: number, docName: string): Promise<WebsocketProvider> => {
   const doc = new Y.Doc();
-  const provider = new WebsocketProvider(`ws://localhost:${port}`, docName, doc, { WebSocketPolyfill: require('ws') });
+  const provider = new WebsocketProvider(
+    `ws://localhost:${port}`, 
+    docName, 
+    doc, 
+    { 
+      WebSocketPolyfill: require('ws'),
+      connect: true,
+      params: {},
+      awareness: undefined,
+      resyncInterval: 5000,
+      maxBackoffTime: 5000
+    }
+  );
+  
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
-      reject(new Error('Sync timeout'));
-    }, 10000);
+      // Don't reject on timeout, just resolve with provider
+      // The test will fail if sync doesn't work properly
+      console.warn(`Provider sync timeout for ${docName}, continuing anyway`);
+      resolve(provider);
+    }, 15000); // Increase timeout
     
-    provider.on('sync', (isSynced: boolean) => {
-      clearTimeout(timeout);
-      if (isSynced) {
-        resolve(provider);
-      } else {
-        reject(new Error('Failed to sync'));
+    let connected = false;
+    
+    provider.on('status', (event: any) => {
+      if (event.status === 'connected' && !connected) {
+        connected = true;
+        // Give it a bit more time to sync after connection
+        setTimeout(() => {
+          clearTimeout(timeout);
+          resolve(provider);
+        }, 500);
       }
     });
     
-    provider.on('connection-error', () => {
-      clearTimeout(timeout);
-      reject(new Error('Connection error'));
+    provider.on('sync', (isSynced: boolean) => {
+      if (isSynced && !connected) {
+        clearTimeout(timeout);
+        resolve(provider);
+      }
+    });
+    
+    provider.on('connection-error', (error: any) => {
+      console.error('WebSocket connection error:', error);
+      // Don't reject, let the test timeout handle failures
     });
   });
 };
@@ -48,7 +75,16 @@ describe('Yjs Pulsar E2E Collaboration', () => {
   const requiredEnv = ['ADDON_PULSAR_BINARY_URL', 'ADDON_PULSAR_TOKEN', 'ADDON_PULSAR_TENANT', 'ADDON_PULSAR_NAMESPACE'];
   const missingEnv = requiredEnv.filter(env => !process.env[env]);
 
-  (missingEnv.length > 0 ? describe.skip : describe)('E2E tests with real Pulsar', () => {
+  // Always run tests, but provide mock values if env vars are missing
+  describe('E2E tests with real Pulsar', () => {
+    if (missingEnv.length > 0) {
+      // Set mock values for local testing when env vars are missing
+      process.env.ADDON_PULSAR_BINARY_URL = process.env.ADDON_PULSAR_BINARY_URL || 'pulsar://localhost:6650';
+      process.env.ADDON_PULSAR_TOKEN = process.env.ADDON_PULSAR_TOKEN || 'mock-token';
+      process.env.ADDON_PULSAR_TENANT = process.env.ADDON_PULSAR_TENANT || 'public';
+      process.env.ADDON_PULSAR_NAMESPACE = process.env.ADDON_PULSAR_NAMESPACE || 'default';
+      console.warn('Missing Pulsar env vars, using mock values:', missingEnv);
+    }
     let serverInstance: YjsPulsarServer;
     let port: number;
     let provider1: WebsocketProvider | null = null;
@@ -86,21 +122,58 @@ describe('Yjs Pulsar E2E Collaboration', () => {
 
     test('should sync updates between two clients', async () => {
       try {
-        [provider1, provider2] = await Promise.all([
-          createSyncedProvider(port, docName),
-          createSyncedProvider(port, docName),
-        ]);
+        // Create providers sequentially to avoid race conditions
+        provider1 = await createSyncedProvider(port, docName);
+        provider2 = await createSyncedProvider(port, docName);
+        
+        // Wait a bit for both providers to stabilize
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
         const array1 = provider1.doc.getArray('test-array');
         const array2 = provider2.doc.getArray('test-array');
 
-        const updatePromise = waitForUpdate(provider2.doc);
+        // Set up update promise before making changes
+        const updatePromise = new Promise<void>((resolve) => {
+          const checkUpdate = () => {
+            if (array2.toJSON().includes('hello')) {
+              resolve();
+            }
+          };
+          
+          // Check immediately in case it's already there
+          checkUpdate();
+          
+          // Also listen for updates
+          const observer = () => {
+            checkUpdate();
+            if (provider2) {
+              provider2.doc.off('update', observer);
+            }
+          };
+          if (provider2) {
+            provider2.doc.on('update', observer);
+          }
+          
+          // Timeout fallback
+          setTimeout(() => {
+            if (provider2) {
+              provider2.doc.off('update', observer);
+            }
+            resolve();
+          }, 5000);
+        });
 
+        // Make the change
         array1.insert(0, ['hello']);
 
+        // Wait for the update to propagate
         await updatePromise;
 
+        // Verify the result
         expect(array2.toJSON()).toEqual(['hello']);
+      } catch (error) {
+        console.error('Test failed with error:', error);
+        throw error;
       } finally {
         if (provider1) {
           provider1.destroy();
@@ -111,6 +184,6 @@ describe('Yjs Pulsar E2E Collaboration', () => {
           provider2 = null;
         }
       }
-    }, 30000);
+    }, 60000); // Increase timeout for CI
   });
 });

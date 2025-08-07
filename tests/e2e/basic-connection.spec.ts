@@ -9,7 +9,15 @@ describe('Basic Connection E2E', () => {
   const requiredEnv = ['ADDON_PULSAR_BINARY_URL', 'ADDON_PULSAR_TOKEN', 'ADDON_PULSAR_TENANT', 'ADDON_PULSAR_NAMESPACE'];
   const missingEnv = requiredEnv.filter(env => !process.env[env]);
 
-  (missingEnv.length > 0 ? describe.skip : describe)('Basic connection tests with real Pulsar', () => {
+  // Always run tests
+  describe('Basic connection tests with real Pulsar', () => {
+    if (missingEnv.length > 0 && !process.env.CI) {
+      // Set mock values for local testing
+      process.env.ADDON_PULSAR_BINARY_URL = 'pulsar://localhost:6650';
+      process.env.ADDON_PULSAR_TOKEN = 'mock-token';
+      process.env.ADDON_PULSAR_TENANT = 'public';
+      process.env.ADDON_PULSAR_NAMESPACE = 'default';
+    }
     let serverInstance: YjsPulsarServer;
     let port: number;
     const docName = `basic-test-doc-${Date.now()}`;
