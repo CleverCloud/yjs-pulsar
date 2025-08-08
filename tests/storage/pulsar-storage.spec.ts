@@ -114,7 +114,10 @@ describe('PulsarStorage with S3 Snapshots', () => {
         messageData[0] = 0; // messageType 0 (sync)
         messageData.set(validUpdate, 1);
         return {
-          getMessageId: () => ({ toString: () => `msg-id-${i}` }),
+          getMessageId: () => ({ 
+            toString: () => `msg-id-${i}`,
+            serialize: () => Buffer.from(`serialized-msg-id-${i}`)
+          }),
           getData: () => messageData
         };
       });
@@ -145,7 +148,7 @@ describe('PulsarStorage with S3 Snapshots', () => {
         mockS3Storage.storeDoc.mock.calls[0][1].toString()
       );
       expect(savedSnapshot.messageCount).toBe(SNAPSHOT_INTERVAL);
-      expect(savedSnapshot.lastMessageId).toBe(`msg-id-${SNAPSHOT_INTERVAL - 1}`);
+      expect(savedSnapshot.lastMessageId).toBe(Buffer.from(`serialized-msg-id-${SNAPSHOT_INTERVAL - 1}`).toString('base64'));
     });
 
     it('should start replay from snapshot MessageID', async () => {
@@ -219,7 +222,10 @@ describe('PulsarStorage with S3 Snapshots', () => {
       const mockReader = {
         readNext: jest.fn()
           .mockResolvedValueOnce({
-            getMessageId: () => ({ toString: () => 'msg-1' }),
+            getMessageId: () => ({ 
+              toString: () => 'msg-1',
+              serialize: () => Buffer.from('serialized-msg-1')
+            }),
             getData: () => messageData
           })
           .mockRejectedValue(new Error('Timeout')),
@@ -251,7 +257,10 @@ describe('PulsarStorage with S3 Snapshots', () => {
       const mockReader = {
         readNext: jest.fn()
           .mockResolvedValueOnce({
-            getMessageId: () => ({ toString: () => 'msg-1' }),
+            getMessageId: () => ({ 
+              toString: () => 'msg-1',
+              serialize: () => Buffer.from('serialized-msg-1')
+            }),
             getData: () => messageData
           })
           .mockRejectedValue(new Error('Timeout')),
@@ -311,7 +320,10 @@ describe('PulsarStorage with S3 Snapshots', () => {
           messageData[0] = 0; // messageType 0 (sync)
           messageData.set(validUpdate, 1);
           return Promise.resolve({
-            getMessageId: () => ({ toString: () => `msg-${callCount}` }),
+            getMessageId: () => ({ 
+              toString: () => `msg-${callCount}`,
+              serialize: () => Buffer.from(`serialized-msg-${callCount}`)
+            }),
             getData: () => messageData
           });
         }),

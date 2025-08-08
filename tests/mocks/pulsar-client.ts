@@ -25,6 +25,7 @@ class MockClient {
     constructor(_config: any) { }
     createProducer(_options: any) { return Promise.resolve(new MockProducer()); }
     subscribe(_options: any) { return Promise.resolve(new MockConsumer()); }
+    createReader(_options: any) { return Promise.resolve(new MockReader()); }
     close() { return Promise.resolve(); }
 }
 
@@ -32,9 +33,27 @@ class MockAuthenticationToken {
     constructor(_options: { token: string }) { }
 }
 
+class MockReader {
+    readNext() {
+        return new Promise(() => { }); // Never resolves to simulate timeout
+    }
+    close() { return Promise.resolve(); }
+}
+
+class MockMessageId {
+    constructor(public id: string = 'mock-msg-id') { }
+    toString() { return this.id; }
+    serialize() { return Buffer.from(`serialized-${this.id}`); }
+}
+
 const Pulsar = {
     Client: MockClient,
     AuthenticationToken: MockAuthenticationToken,
+    MessageId: {
+        earliest: () => new MockMessageId('earliest'),
+        latest: () => new MockMessageId('latest'),
+        deserialize: (buffer: Buffer) => new MockMessageId(buffer.toString())
+    },
 };
 
 export default Pulsar;
