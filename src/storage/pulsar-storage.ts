@@ -79,7 +79,7 @@ export class PulsarStorage implements Storage {
       // Convert state back to Uint8Array
       snapshot.state = new Uint8Array(snapshot.state);
       
-      console.log(`[PulsarStorage] Loaded snapshot for ${documentName}: ${snapshot.messageCount} messages, MessageID: ${snapshot.lastMessageId}`);
+      console.log(`[PulsarStorage] Loaded snapshot for ${documentName}: ${snapshot.messageCount} messages`);
       return snapshot;
     } catch (error) {
       console.warn(`[PulsarStorage] Failed to load snapshot for ${documentName}:`, error);
@@ -99,7 +99,7 @@ export class PulsarStorage implements Storage {
     try {
       const snapshot: DocumentSnapshot = {
         state: Array.from(state), // Convert Uint8Array to regular array for JSON
-        lastMessageId: lastMessageId.toString(),
+        lastMessageId: lastMessageId.serialize().toString('base64'),
         messageCount,
         timestamp: Date.now()
       };
@@ -108,7 +108,7 @@ export class PulsarStorage implements Storage {
       const snapshotBuffer = Buffer.from(JSON.stringify(snapshot));
       
       await this.s3Storage.storeDoc(snapshotKey, snapshotBuffer);
-      console.log(`[PulsarStorage] Saved snapshot for ${documentName}: ${messageCount} messages, MessageID: ${lastMessageId.toString()}`);
+      console.log(`[PulsarStorage] Saved snapshot for ${documentName}: ${messageCount} messages`);
     } catch (error) {
       console.error(`[PulsarStorage] Failed to save snapshot for ${documentName}:`, error);
     }
