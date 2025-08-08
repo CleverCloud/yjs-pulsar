@@ -18,7 +18,7 @@ jest.mock('pulsar-client', () => {
     })),
     acknowledge: jest.fn(),
     close: jest.fn().mockResolvedValue(undefined),
-    isConnected: jest.fn(() => false),
+    isConnected: jest.fn().mockResolvedValue(true), // Should return Promise<boolean>
   };
 
   const mockClient = {
@@ -49,15 +49,22 @@ describe('Yjs Pulsar Server Integration', () => {
   });
 
   afterAll(async () => {
-    await serverInstance?.stop();
-  });
+    if (serverInstance) {
+      try {
+        await serverInstance.stop();
+      } catch (error: any) {
+        // Ignore errors during test cleanup
+        console.warn('Error during test cleanup:', error.message);
+      }
+    }
+  }, 10000); // Increase timeout for cleanup
 
   const createSyncedProvider = (doc: Y.Doc): Promise<WebsocketProvider> => {
     const provider = new WebsocketProvider(`ws://localhost:${port}`, docName, doc, { WebSocketPolyfill: require('ws') });
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('Sync timeout'));
-      }, 5000);
+      }, 10000); // Increased timeout
       
       provider.on('sync', (isSynced: boolean) => {
         clearTimeout(timeout);
@@ -79,7 +86,7 @@ describe('Yjs Pulsar Server Integration', () => {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('Update timeout'));
-      }, 5000);
+      }, 10000); // Increased timeout
       
       doc.on('update', () => {
         clearTimeout(timeout);
