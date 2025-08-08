@@ -76,6 +76,13 @@ export class PulsarStorage implements Storage {
       }
 
       const snapshot = JSON.parse(Buffer.from(snapshotData).toString());
+      
+      // Validate snapshot format
+      if (!snapshot.state || !snapshot.lastMessageId || typeof snapshot.messageCount !== 'number') {
+        console.warn(`[PulsarStorage] Invalid snapshot format for ${documentName}, ignoring`);
+        return null;
+      }
+      
       // Convert state back to Uint8Array
       snapshot.state = new Uint8Array(snapshot.state);
       
@@ -84,6 +91,24 @@ export class PulsarStorage implements Storage {
     } catch (error) {
       console.warn(`[PulsarStorage] Failed to load snapshot for ${documentName}:`, error);
       return null;
+    }
+  }
+
+  /**
+   * Clear/delete a snapshot from S3
+   */
+  private async clearSnapshot(documentName: string): Promise<void> {
+    if (!this.s3Storage) {
+      return;
+    }
+    
+    try {
+      const snapshotKey = this.getSnapshotKey(documentName);
+      // Delete the snapshot by storing empty content (S3Storage doesn't have delete method)
+      await this.s3Storage.storeDoc(snapshotKey, new Uint8Array(0));
+      console.log(`[PulsarStorage] Cleared corrupted snapshot for ${documentName}`);
+    } catch (error) {
+      console.warn(`[PulsarStorage] Failed to clear snapshot for ${documentName}:`, error);
     }
   }
 
@@ -184,12 +209,17 @@ export class PulsarStorage implements Storage {
         baseMessageCount = snapshot.messageCount;
         
         try {
-          // Parse the MessageID from string
+          // Parse the MessageID from base64 encoded buffer
           startMessageId = Pulsar.MessageId.deserialize(Buffer.from(snapshot.lastMessageId, 'base64'));
           console.log(`[PulsarStorage] Starting replay from snapshot checkpoint: ${snapshot.messageCount} messages`);
         } catch (messageIdError) {
-          console.warn(`[PulsarStorage] Failed to parse snapshot MessageID, starting from earliest:`, messageIdError);
+          console.warn(`[PulsarStorage] Failed to parse snapshot MessageID (old format?), clearing snapshot and starting from earliest:`, messageIdError);
+          // Clear the corrupted snapshot
+          await this.clearSnapshot(documentName);
           startMessageId = Pulsar.MessageId.earliest();
+          baseMessageCount = 0; // Reset since we're starting fresh
+          // Clear the document state since snapshot was invalid
+          Y.applyUpdate(ydoc, new Uint8Array(0)); // Reset to empty state
         }
       } else {
         console.log(`[PulsarStorage] No snapshot found, starting from beginning of topic`);
