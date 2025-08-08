@@ -400,7 +400,7 @@ export const getYDoc = async (docName: string, pulsarClientContainer: PulsarClie
                         topic: topicName,
                         subscription: `${docName}-subscription`,
                         subscriptionType: 'Shared',
-                        ackTimeoutMs: 5000, // Reduced timeout
+                        ackTimeoutMs: 10000, // Must be >= 10000 according to error
                         subscriptionInitialPosition: 'Latest', // Start from latest to reduce initial load
                     });
                     console.log(`[${docName}] Consumer created successfully`);
