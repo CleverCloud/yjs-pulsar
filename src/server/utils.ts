@@ -384,57 +384,132 @@ export const getYDoc = async (docName: string, pulsarClientContainer: PulsarClie
                 });
             }
 
-            (async () => {
+            // Start consumer loop with better memory management and error handling
+            const startConsumerLoop = async () => {
                 const consumer = newDoc.consumer;
                 if (!consumer) return;
 
-                while (await consumer.isConnected()) {
-                    try {
-                        const receivedMsg = await consumer.receive();
-                        const data = receivedMsg.getData();
-                        
-                        if (!data || data.length === 0) {
-                            console.warn(`[${docName}] Received empty message from Pulsar, ignoring`);
-                            await consumer.acknowledge(receivedMsg);
-                            continue;
-                        }
-                        
-                        const messageType = data[0];
-                        const update = data.slice(1);
+                let isRunning = true;
+                let consecutiveErrors = 0;
+                const MAX_CONSECUTIVE_ERRORS = 5;
 
-                        if (update.length === 0) {
-                            console.warn(`[${docName}] Received message with empty update from Pulsar, ignoring`);
-                            await consumer.acknowledge(receivedMsg);
-                            continue;
-                        }
+                // Add cleanup handler to stop the loop when document is destroyed
+                const stopLoop = () => { isRunning = false; };
+                newDoc.on('destroy', stopLoop);
 
-                        newDoc.mux(() => {
-                            try {
-                                switch (messageType) {
-                                    case messageSync:
-                                        Y.applyUpdate(newDoc, update, PULSAR_ORIGIN);
-                                        break;
-                                    case messageAwareness:
-                                        awarenessProtocol.applyAwarenessUpdate(newDoc.awareness, update, PULSAR_ORIGIN);
-                                        break;
-                                    default:
-                                        console.warn(`[${docName}] Unknown Pulsar message type: ${messageType}`);
-                                }
-                            } catch (updateErr) {
-                                console.error(`[${docName}] Error applying Pulsar update:`, updateErr);
+                try {
+                    while (isRunning && await consumer.isConnected()) {
+                        try {
+                            // Add timeout to prevent hanging
+                            const receiveTimeout = 30000; // 30 seconds
+                            const receivedMsg = await Promise.race([
+                                consumer.receive(),
+                                new Promise<never>((_, reject) => 
+                                    setTimeout(() => reject(new Error('Receive timeout')), receiveTimeout)
+                                )
+                            ]);
+                            
+                            consecutiveErrors = 0; // Reset error counter on successful receive
+                            
+                            const data = receivedMsg.getData();
+                            
+                            // Enhanced validation with bounds checking
+                            if (!data || data.length === 0) {
+                                console.warn(`[${docName}] Received empty message from Pulsar, acknowledging and ignoring`);
+                                await consumer.acknowledge(receivedMsg);
+                                continue;
                             }
-                        });
-                        await consumer.acknowledge(receivedMsg);
-                    } catch (error) {
-                        if (await consumer.isConnected()) {
-                            console.error(`[${newDoc.name}]-PULSAR-CONSUMER: error`, error);
-                        } else {
-                            console.log(`[${newDoc.name}]-PULSAR-CONSUMER: disconnected, exiting loop.`);
+                            
+                            // Validate message size to prevent memory issues
+                            if (data.length > 50 * 1024 * 1024) { // 50MB limit
+                                console.error(`[${docName}] Message too large (${data.length} bytes), skipping`);
+                                await consumer.acknowledge(receivedMsg);
+                                continue;
+                            }
+                            
+                            const messageType = data[0];
+                            const update = data.slice(1);
+
+                            if (update.length === 0) {
+                                console.warn(`[${docName}] Received message with empty update from Pulsar, acknowledging and ignoring`);
+                                await consumer.acknowledge(receivedMsg);
+                                continue;
+                            }
+
+                            // Process update within mutex with timeout
+                            const processPromise = new Promise<void>((resolve, reject) => {
+                                newDoc.mux(() => {
+                                    try {
+                                        switch (messageType) {
+                                            case messageSync:
+                                                Y.applyUpdate(newDoc, update, PULSAR_ORIGIN);
+                                                break;
+                                            case messageAwareness:
+                                                awarenessProtocol.applyAwarenessUpdate(newDoc.awareness, update, PULSAR_ORIGIN);
+                                                break;
+                                            default:
+                                                console.warn(`[${docName}] Unknown Pulsar message type: ${messageType}`);
+                                        }
+                                        resolve();
+                                    } catch (updateErr) {
+                                        console.error(`[${docName}] Error applying Pulsar update:`, updateErr);
+                                        reject(updateErr);
+                                    }
+                                });
+                            });
+
+                            // Apply update with timeout to prevent hanging
+                            await Promise.race([
+                                processPromise,
+                                new Promise((_, reject) => 
+                                    setTimeout(() => reject(new Error('Update processing timeout')), 5000)
+                                )
+                            ]);
+
+                            await consumer.acknowledge(receivedMsg);
+                            
+                            // Explicit cleanup of large objects to help GC
+                            if (data.length > 1024 * 1024) { // For messages > 1MB
+                                if ((global as any).gc) {
+                                    setImmediate(() => (global as any).gc());
+                                }
+                            }
+                            
+                        } catch (error: any) {
+                            consecutiveErrors++;
+                            
+                            if (error.message === 'Receive timeout') {
+                                // Timeout is normal, just continue
+                                continue;
+                            }
+                            
+                            if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                                console.error(`[${newDoc.name}] Too many consecutive errors (${consecutiveErrors}), stopping consumer`);
+                                break;
+                            }
+                            
+                            if (await consumer.isConnected()) {
+                                console.error(`[${newDoc.name}]-PULSAR-CONSUMER: error (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}):`, error.message || error);
+                                // Add delay between errors to prevent rapid cycling
+                                await new Promise(resolve => setTimeout(resolve, Math.min(1000 * consecutiveErrors, 5000)));
+                            } else {
+                                console.log(`[${newDoc.name}]-PULSAR-CONSUMER: disconnected, exiting loop.`);
+                                break;
+                            }
                         }
-                        break;
                     }
+                } catch (fatalError) {
+                    console.error(`[${docName}] Fatal error in consumer loop:`, fatalError);
+                } finally {
+                    newDoc.off('destroy', stopLoop);
+                    console.log(`[${docName}] Consumer loop ended`);
                 }
-            })();
+            };
+
+            // Start the consumer loop
+            startConsumerLoop().catch(err => {
+                console.error(`[${docName}] Consumer loop startup error:`, err);
+            });
 
             return newDoc; // Success
         } catch (err) {

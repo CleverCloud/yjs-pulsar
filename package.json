@@ -6,7 +6,7 @@
     "test": "jest --runInBand --detectOpenHandles tests/",
     "test:e2e": "jest --config jest.config.e2e.js --runInBand --verbose",
     "start:server": "ts-node src/server/index.ts",
-    "start": "node dist/server/production.js",
+    "start": "node --max-old-space-size=12288 --expose-gc --optimize-for-size dist/server/production.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server/index.ts",
     "demo": "vite demo",
     "build": "npm run build:demo && npm run build:server",

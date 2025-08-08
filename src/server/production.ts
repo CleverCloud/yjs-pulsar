@@ -60,11 +60,45 @@ async function startProductionServer() {
     console.log(`🔗 WebSocket server ready for Yjs collaboration`);
     console.log(`💡 Open multiple tabs to test real-time collaboration!`);
     
-    // Gestion de l'arrêt propre
-    process.on('SIGTERM', async () => {
-      console.log('📝 Shutting down gracefully...');
-      await yjsServer.stop();
-      process.exit(0);
+    // Enhanced graceful shutdown handling
+    const gracefulShutdown = async (signal: string) => {
+      console.log(`📝 Received ${signal}, shutting down gracefully...`);
+      try {
+        // Set a timeout for shutdown to prevent hanging
+        const shutdownTimeout = setTimeout(() => {
+          console.error('⚠️ Shutdown timeout reached, forcing exit');
+          process.exit(1);
+        }, 30000); // 30 second timeout
+
+        await yjsServer.stop();
+        clearTimeout(shutdownTimeout);
+        console.log('✅ Server shut down successfully');
+        process.exit(0);
+      } catch (error) {
+        console.error('❌ Error during shutdown:', error);
+        process.exit(1);
+      }
+    };
+
+    // Handle multiple shutdown signals
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+    process.on('SIGHUP', () => gracefulShutdown('SIGHUP'));
+    
+    // Handle uncaught exceptions to prevent segfaults
+    process.on('uncaughtException', (error) => {
+      console.error('💥 Uncaught exception:', error);
+      console.log('🔄 Attempting graceful shutdown after uncaught exception...');
+      gracefulShutdown('uncaughtException').catch(() => {
+        console.error('❌ Failed to shutdown gracefully after uncaught exception');
+        process.exit(1);
+      });
+    });
+    
+    // Handle unhandled promise rejections
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('💥 Unhandled promise rejection at:', promise, 'reason:', reason);
+      // Don't exit on promise rejections, just log them
     });
     
   } catch (error) {
