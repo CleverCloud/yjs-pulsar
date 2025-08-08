@@ -98,14 +98,17 @@ export class PulsarStorage implements Storage {
         return null; // Return null to force starting from earliest
       }
       
-      // Additional safety check: ensure it looks like valid base64
+      // Additional safety check: ensure it looks like valid base64 and can be safely deserialized
       try {
         const buffer = Buffer.from(snapshot.lastMessageId, 'base64');
         if (buffer.length === 0) {
           throw new Error('Empty buffer from base64 decode');
         }
-      } catch (base64Error) {
-        console.warn(`[PulsarStorage] Snapshot MessageID is not valid base64 for ${documentName}, clearing snapshot:`, base64Error);
+        
+        // Test deserialization to ensure it won't crash later
+        Pulsar.MessageId.deserialize(buffer);
+      } catch (deserializeError) {
+        console.warn(`[PulsarStorage] Snapshot MessageID cannot be safely deserialized for ${documentName}, clearing snapshot:`, deserializeError);
         setImmediate(async () => {
           try {
             await this.clearSnapshot(documentName);
