@@ -37,26 +37,47 @@ export const initializeStorage = (pulsarClient: Pulsar.Client, config: ServerCon
 
     const storageType = process.env.STORAGE_TYPE;
     
-    switch (storageType) {
-        case 's3':
-            storage = new S3Storage();
-            console.log('💾 Using S3 storage mode for document persistence');
-            break;
-        case 'pulsar':
-            const snapshotInterval = parseInt(process.env.SNAPSHOT_INTERVAL || '30'); // Default 30 messages
-            storage = new PulsarStorage(
-                pulsarClient,
-                config.pulsarTenant || 'public',
-                config.pulsarNamespace || 'default',
-                config.pulsarTopicPrefix || 'yjs-doc-',
-                snapshotInterval
-            );
-            console.log(`🔄 Using Pulsar+S3 hybrid storage mode (snapshots every ${snapshotInterval} messages)`);
-            break;
-        default:
-            console.log('📝 Storage disabled (STORAGE_TYPE=none or not set)');
-            storage = null;
-            break;
+    try {
+        switch (storageType) {
+            case 's3':
+                storage = new S3Storage();
+                console.log('💾 Using S3 storage mode for document persistence');
+                break;
+            case 'pulsar':
+                const snapshotInterval = parseInt(process.env.SNAPSHOT_INTERVAL || '30'); // Default 30 messages
+                console.log('[Storage] Initializing Pulsar storage with safety checks...');
+                
+                // Add safety delay to let Pulsar client stabilize
+                setTimeout(() => {
+                    try {
+                        storage = new PulsarStorage(
+                            pulsarClient,
+                            config.pulsarTenant || 'public',
+                            config.pulsarNamespace || 'default',
+                            config.pulsarTopicPrefix || 'yjs-doc-',
+                            snapshotInterval
+                        );
+                        console.log(`🔄 Using Pulsar+S3 hybrid storage mode (snapshots every ${snapshotInterval} messages)`);
+                    } catch (pulsarError) {
+                        console.error('❌ Failed to initialize Pulsar storage:', pulsarError);
+                        console.log('🔄 Falling back to no storage mode');
+                        storage = null;
+                    }
+                }, 1000); // 1 second delay
+                
+                // Temporarily set to null until async initialization completes
+                storage = null;
+                console.log('⏳ Pulsar storage initialization delayed for stability');
+                break;
+            default:
+                console.log('📝 Storage disabled (STORAGE_TYPE=none or not set)');
+                storage = null;
+                break;
+        }
+    } catch (error) {
+        console.error('❌ Storage initialization failed:', error);
+        console.log('🔄 Falling back to no storage mode');
+        storage = null;
     }
     storageInitialized = true;
 };
@@ -66,17 +87,19 @@ export const getStorage = (): Storage | null => {
 };
 
 export const createPulsarClient = (config: ServerConfig): Pulsar.Client => {
-    // Creating Pulsar client connection
+    // Creating Pulsar client connection with minimal configuration to avoid segfaults
     const clientConfig: Pulsar.ClientConfig = {
         serviceUrl: config.pulsarUrl,
-        operationTimeoutSeconds: 120,
-        connectionTimeoutMs: 30000, // Add connection timeout
-        ioThreads: 2, // Increase IO threads for better performance
-        messageListenerThreads: 2,
+        operationTimeoutSeconds: 60, // Reduced from 120 
+        connectionTimeoutMs: 15000, // Reduced from 30000
+        ioThreads: 1, // Reduced to minimal to avoid threading issues
+        messageListenerThreads: 1, // Reduced to minimal
     };
     if (config.pulsarToken) {
         clientConfig.authentication = new Pulsar.AuthenticationToken({ token: config.pulsarToken });
     }
+    
+    console.log('[PulsarClient] Creating client with conservative settings to prevent segfaults');
     return new Pulsar.Client(clientConfig);
 };
 
