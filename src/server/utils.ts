@@ -186,20 +186,26 @@ export class YDoc extends Y.Doc {
         if (origin !== PULSAR_ORIGIN) {
             const producer = this.producer;
             if (producer) {
-                const pulsarMessage = Buffer.concat([Buffer.from([messageSync]), Buffer.from(update)]);
-                const messageOptions: any = { 
-                    data: pulsarMessage,
-                    // Use document name + timestamp as key for compaction
-                    partitionKey: `${this.name}-sync-${Date.now()}`,
-                    properties: {
-                        messageType: 'sync',
-                        docName: this.name
-                    }
-                };
-                
-                producer.send(messageOptions).catch(err => {
-                    console.error(`[${this.name}] Failed to send sync update to Pulsar:`, err);
-                });
+                try {
+                    const pulsarMessage = Buffer.concat([Buffer.from([messageSync]), Buffer.from(update)]);
+                    const messageOptions: any = { 
+                        data: pulsarMessage,
+                        // Use document name + timestamp as key for compaction
+                        partitionKey: `${this.name}-sync-${Date.now()}`,
+                        properties: {
+                            messageType: 'sync',
+                            docName: this.name
+                        }
+                    };
+                    
+                    producer.send(messageOptions).catch(err => {
+                        console.error(`[${this.name}] Failed to send sync update to Pulsar:`, err?.message || err);
+                    });
+                } catch (err) {
+                    console.error(`[${this.name}] Error preparing sync message for Pulsar:`, err);
+                }
+            } else {
+                console.warn(`[${this.name}] No producer available for sync update`);
             }
         }
     }
@@ -219,20 +225,26 @@ export class YDoc extends Y.Doc {
         if (origin !== PULSAR_ORIGIN) {
             const producer = this.producer;
             if (producer) {
-                const pulsarMessage = Buffer.concat([Buffer.from([messageAwareness]), Buffer.from(awarenessUpdate)]);
-                const messageOptions: any = { 
-                    data: pulsarMessage,
-                    // Use document name + awareness for key (awareness messages don't need strict ordering)
-                    partitionKey: `${this.name}-awareness-${Date.now()}`,
-                    properties: {
-                        messageType: 'awareness',
-                        docName: this.name
-                    }
-                };
-                
-                producer.send(messageOptions).catch(err => {
-                    console.error(`[${this.name}] Failed to send awareness update to Pulsar:`, err);
-                });
+                try {
+                    const pulsarMessage = Buffer.concat([Buffer.from([messageAwareness]), Buffer.from(awarenessUpdate)]);
+                    const messageOptions: any = { 
+                        data: pulsarMessage,
+                        // Use document name + awareness for key (awareness messages don't need strict ordering)
+                        partitionKey: `${this.name}-awareness-${Date.now()}`,
+                        properties: {
+                            messageType: 'awareness',
+                            docName: this.name
+                        }
+                    };
+                    
+                    producer.send(messageOptions).catch(err => {
+                        console.error(`[${this.name}] Failed to send awareness update to Pulsar:`, err?.message || err);
+                    });
+                } catch (err) {
+                    console.error(`[${this.name}] Error preparing awareness message for Pulsar:`, err);
+                }
+            } else {
+                console.warn(`[${this.name}] No producer available for awareness update`);
             }
         }
     }
@@ -358,59 +370,54 @@ export const getYDoc = async (docName: string, pulsarClientContainer: PulsarClie
             const topicName = getFullTopicName(pulsarConfig, docName);
 
             if (!newDoc.producer) {
-                const storageType = process.env.STORAGE_TYPE;
+                console.log(`[${docName}] Creating Pulsar producer with minimal config to prevent segfaults`);
                 const producerOptions: any = {
                     topic: topicName,
                     producerName: `${docName}-producer-${Date.now()}`,
-                    sendTimeoutMs: 30000,
-                    maxPendingMessages: 1000,
-                    blockIfQueueFull: true,
+                    sendTimeoutMs: 10000, // Reduced timeout
+                    maxPendingMessages: 100, // Reduced queue size
+                    blockIfQueueFull: false, // Don't block to avoid hanging
                 };
                 
-                // Enable message persistence and compaction for Pulsar-only mode
-                if (storageType === 'pulsar') {
-                    // Use message key for compaction - this enables topic compaction which retains the latest message per key
-                    producerOptions.messageRoutingMode = 'CustomPartition';
-                    // Add properties to request topic compaction
-                    producerOptions.properties = {
-                        'compaction.threshold': '1MB',
-                        'retention.bytes': '100MB',
-                        'retention.time': '7d'
-                    };
-                    console.log(`[${docName}] Creating producer with compaction and retention enabled`);
-                }
-                
                 try {
+                    // Add delay before producer creation to let system stabilize
+                    await new Promise(resolve => setTimeout(resolve, 100));
                     newDoc.producer = await pulsarClientContainer.client.createProducer(producerOptions);
+                    console.log(`[${docName}] Producer created successfully`);
                 } catch (error: any) {
-                    // If producer creation fails, retry once with a simpler configuration
-                    if (error.message?.includes('ResultDisconnected')) {
-                        console.warn(`[${docName}] Initial producer creation failed, retrying with simpler config...`);
-                        const simpleOptions = {
-                            topic: topicName,
-                            producerName: `${docName}-producer-retry-${Date.now()}`,
-                            sendTimeoutMs: 60000, // Longer timeout for retry
-                        };
-                        newDoc.producer = await pulsarClientContainer.client.createProducer(simpleOptions);
-                    } else {
-                        throw error;
-                    }
+                    console.error(`[${docName}] Producer creation failed:`, error.message || error);
+                    // Don't retry - just continue without producer for now
+                    newDoc.producer = null;
                 }
             }
 
             if (!newDoc.consumer) {
-                newDoc.consumer = await pulsarClientContainer.client.subscribe({
-                    topic: topicName,
-                    subscription: `${docName}-subscription`,
-                    subscriptionType: 'Shared',
-                    ackTimeoutMs: 10000,
-                });
+                console.log(`[${docName}] Creating Pulsar consumer with minimal config to prevent segfaults`);
+                try {
+                    // Add delay before consumer creation
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                    newDoc.consumer = await pulsarClientContainer.client.subscribe({
+                        topic: topicName,
+                        subscription: `${docName}-subscription`,
+                        subscriptionType: 'Shared',
+                        ackTimeoutMs: 5000, // Reduced timeout
+                        subscriptionInitialPosition: 'Latest', // Start from latest to reduce initial load
+                    });
+                    console.log(`[${docName}] Consumer created successfully`);
+                } catch (error: any) {
+                    console.error(`[${docName}] Consumer creation failed:`, error.message || error);
+                    // Don't retry - just continue without consumer for now
+                    newDoc.consumer = null;
+                }
             }
 
             // Start consumer loop with better memory management and error handling
             const startConsumerLoop = async () => {
                 const consumer = newDoc.consumer;
-                if (!consumer) return;
+                if (!consumer) {
+                    console.log(`[${docName}] No consumer available, skipping consumer loop`);
+                    return;
+                }
 
                 let isRunning = true;
                 let consecutiveErrors = 0;

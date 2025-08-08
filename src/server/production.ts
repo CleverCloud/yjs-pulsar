@@ -19,10 +19,6 @@ async function startProductionServer() {
   console.log('🚀 Starting Yjs Pulsar Demo Server...');
   console.log(`📡 Pulsar URL: ${config.pulsarUrl}`);
   console.log(`🏠 Port: ${port}`);
-  
-  // Temporarily disable storage to prevent segfaults while we debug
-  console.log('⚠️  Temporarily disabling storage to prevent segfaults');
-  process.env.STORAGE_TYPE = 'none';
 
   try {
     // Démarrer le serveur Yjs avec WebSocket
