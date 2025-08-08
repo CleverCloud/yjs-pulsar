@@ -83,8 +83,24 @@ export class PulsarStorage implements Storage {
         return null;
       }
       
-      // Convert state back to Uint8Array
-      snapshot.state = new Uint8Array(snapshot.state);
+      // Validate MessageID can be deserialized - test it without actually using it
+      try {
+        Pulsar.MessageId.deserialize(Buffer.from(snapshot.lastMessageId, 'base64'));
+      } catch (messageIdError) {
+        console.warn(`[PulsarStorage] Snapshot has invalid MessageID format for ${documentName} (probably old format), clearing snapshot:`, messageIdError);
+        // Clear the corrupted snapshot asynchronously to prevent future crashes
+        setImmediate(async () => {
+          try {
+            await this.clearSnapshot(documentName);
+          } catch (clearError) {
+            console.error(`[PulsarStorage] Failed to clear corrupted snapshot:`, clearError);
+          }
+        });
+        return null; // Return null to force starting from earliest
+      }
+      
+      // Note: Leave state as number[] array for interface consistency
+      // We'll convert it to Uint8Array at point of use
       
       console.log(`[PulsarStorage] Loaded snapshot for ${documentName}: ${snapshot.messageCount} messages`);
       return snapshot;
@@ -208,19 +224,9 @@ export class PulsarStorage implements Storage {
         Y.applyUpdate(ydoc, snapshotState);
         baseMessageCount = snapshot.messageCount;
         
-        try {
-          // Parse the MessageID from base64 encoded buffer
-          startMessageId = Pulsar.MessageId.deserialize(Buffer.from(snapshot.lastMessageId, 'base64'));
-          console.log(`[PulsarStorage] Starting replay from snapshot checkpoint: ${snapshot.messageCount} messages`);
-        } catch (messageIdError) {
-          console.warn(`[PulsarStorage] Failed to parse snapshot MessageID (old format?), clearing snapshot and starting from earliest:`, messageIdError);
-          // Clear the corrupted snapshot
-          await this.clearSnapshot(documentName);
-          startMessageId = Pulsar.MessageId.earliest();
-          baseMessageCount = 0; // Reset since we're starting fresh
-          // Clear the document state since snapshot was invalid
-          Y.applyUpdate(ydoc, new Uint8Array(0)); // Reset to empty state
-        }
+        // Parse the MessageID from base64 encoded buffer (already validated in loadSnapshot)
+        startMessageId = Pulsar.MessageId.deserialize(Buffer.from(snapshot.lastMessageId, 'base64'));
+        console.log(`[PulsarStorage] Starting replay from snapshot checkpoint: ${snapshot.messageCount} messages`);
       } else {
         console.log(`[PulsarStorage] No snapshot found, starting from beginning of topic`);
       }
