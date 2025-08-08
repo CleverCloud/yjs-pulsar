@@ -83,11 +83,10 @@ export class PulsarStorage implements Storage {
         return null;
       }
       
-      // Validate MessageID can be deserialized - test it without actually using it
-      try {
-        Pulsar.MessageId.deserialize(Buffer.from(snapshot.lastMessageId, 'base64'));
-      } catch (messageIdError) {
-        console.warn(`[PulsarStorage] Snapshot has invalid MessageID format for ${documentName} (probably old format), clearing snapshot:`, messageIdError);
+      // Check if MessageID is in old format (toString() format contains parentheses and commas)
+      // New format is base64 encoded binary data, old format was like "(ledger,entry,partition,batch)"
+      if (snapshot.lastMessageId.includes('(') || snapshot.lastMessageId.includes(',') || snapshot.lastMessageId.includes(')')) {
+        console.warn(`[PulsarStorage] Detected old MessageID format for ${documentName} (contains parentheses/commas), clearing snapshot to prevent crash`);
         // Clear the corrupted snapshot asynchronously to prevent future crashes
         setImmediate(async () => {
           try {
@@ -97,6 +96,24 @@ export class PulsarStorage implements Storage {
           }
         });
         return null; // Return null to force starting from earliest
+      }
+      
+      // Additional safety check: ensure it looks like valid base64
+      try {
+        const buffer = Buffer.from(snapshot.lastMessageId, 'base64');
+        if (buffer.length === 0) {
+          throw new Error('Empty buffer from base64 decode');
+        }
+      } catch (base64Error) {
+        console.warn(`[PulsarStorage] Snapshot MessageID is not valid base64 for ${documentName}, clearing snapshot:`, base64Error);
+        setImmediate(async () => {
+          try {
+            await this.clearSnapshot(documentName);
+          } catch (clearError) {
+            console.error(`[PulsarStorage] Failed to clear corrupted snapshot:`, clearError);
+          }
+        });
+        return null;
       }
       
       // Note: Leave state as number[] array for interface consistency
